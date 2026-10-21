@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testes · Portal da Reforma Tributária</title>
+<style>
+  body { font-family: "Segoe UI", system-ui, sans-serif; font-size: 14px; margin: 24px; color: #1d1a24; background: #fff; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { color: #57525f; margin: 0 0 16px; }
+  .resumo { display: flex; gap: 16px; margin: 16px 0; font-size: 15px; }
+  .resumo strong { font-size: 22px; display: block; }
+  .ok { color: #237a57; } .falha { color: #b8322a; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #e6e2ec; vertical-align: top; }
+  th { color: #6f6a78; font-weight: 500; }
+  td.id { font-family: Consolas, monospace; white-space: nowrap; }
+  td.msg { color: #b8322a; font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; }
+  #shell { display: none; }
+</style>
+</head>
+<body>
+<h1>Testes automatizados do portal</h1>
+<p>Executados neste navegador, com dados de demonstração e um Microsoft Graph simulado. Nada é gravado fora da página.</p>
+<div class="resumo" id="resumo">Executando…</div>
+<table>
+  <thead><tr><th>Código</th><th>Teste</th><th>Resultado</th><th>Tempo</th><th>Detalhe</th></tr></thead>
+  <tbody id="resultados"></tbody>
+</table>
+
+<!-- Estrutura mínima da página do portal, oculta, para o app.js iniciar sem erro -->
+<div id="shell">
+  <div class="marca-logo"><img alt=""></div><div class="marca-nome"></div>
+  <nav class="nav"></nav>
+  <form id="form-busca"><input id="busca-global"></form>
+  <div id="usuario"></div><div id="faixa-modo"></div><div id="cabecalho-impressao"></div>
+  <main id="conteudo"></main>
+</div>
+<div id="modal" hidden></div><div id="toasts"></div><div id="progresso" hidden></div>
+
+<script src="../js/config.js?v=dev"></script>
+<script src="../js/esquema.js?v=dev"></script>
+<script src="../js/dados-demo.js?v=dev"></script>
+<script src="../js/regras.js?v=dev"></script>
+<script src="../js/repositorio.js?v=dev"></script>
+<script src="../js/auth.js?v=dev"></script>
+<script src="../js/ui.js?v=dev"></script>
+<script src="../js/xlsx.js?v=dev"></script>
+<script src="../js/relatorios.js?v=dev"></script>
+<script src="../js/telas.js?v=dev"></script>
+<script src="../js/app.js?v=dev"></script>
+<script src="graph-simulado.js?v=dev"></script>
+<script src="testes.js?v=dev"></script>
+</body>
+</html>
