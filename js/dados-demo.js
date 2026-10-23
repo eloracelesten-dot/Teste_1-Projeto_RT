@@ -36,6 +36,7 @@ RT.dadosDemo = function () {
   const P = (codigo, titulo, tipo, categoria, origem, dataRecebimento, status, responsavel, area, extra) => Object.assign({
     codigo, titulo, tipo, categoria, origem, dataRecebimento, status, responsavel: responsavel || "", area,
     descricao: "Descrição de demonstração. Neste campo vai o objetivo do documento e a pergunta que ele responde.",
+    periodo: `${dataRecebimento.slice(5, 7)}/${dataRecebimento.slice(0, 4)}`, interacoes: [],
     resumo: "", conclusoes: "", legislacao: "LC 214/2025", prazo: "", unidades: ["Distribuição"], anexos: [],
     aprovadoPor: "", aprovadoEm: ""
   }, extra || {});
@@ -53,7 +54,13 @@ RT.dadosDemo = function () {
     P("PT-014", "Créditos de CBS na aquisição de serviços de manutenção", "Parecer", "Créditos de IBS e CBS", "Consultoria Alfa (fictícia)", "2026-08-12", "Aprovado internamente", "Mariana Costa", "Fiscal e tributária",
       { descricao: "Avaliar se a aquisição de serviços de manutenção de rede, contratados de terceiros, gera direito a crédito de CBS, e em quais condições o crédito pode ser aproveitado.",
         resumo: "Texto de demonstração. Neste campo entra o resumo executivo redigido pela consultoria ou pela área tributária.",
-        conclusoes: demoConclusao, prazo: "2026-10-15", unidades: ["Distribuição", "Transmissão"],
+        conclusoes: demoConclusao, prazo: "2026-10-15", unidades: ["Distribuição", "Transmissão"], periodo: "08/2026",
+        interacoes: [
+          { tipo: "Solicitação", data: "2026-07-28", texto: "Solicitada à Consultoria Alfa a avaliação do crédito de CBS nos contratos de manutenção de rede, com prazo de 15 dias.", registradoPor: "Mariana Costa", registradoEm: "2026-07-28T10:00:00" },
+          { tipo: "Retorno", data: "2026-08-12", texto: "Recebida a versão 1 do parecer.", registradoPor: "Mariana Costa", registradoEm: "2026-08-12T17:02:00" },
+          { tipo: "Solicitação", data: "2026-08-20", texto: "Pedido de esclarecimento sobre serviços com material incluso.", registradoPor: "Rafael Lima", registradoEm: "2026-08-20T09:15:00" },
+          { tipo: "Retorno", data: "2026-09-30", texto: "Recebida a versão 3, com o esclarecimento incorporado.", registradoPor: "Mariana Costa", registradoEm: "2026-09-30T14:48:00" }
+        ],
         aprovadoPor: "Mariana Costa", aprovadoEm: "2026-10-21T09:42:00",
         anexos: [
           anexo("PT-014_parecer_v1.pdf", 1050, 1, "Mariana Costa", "2026-08-12T17:02:00"),
@@ -271,6 +278,24 @@ RT.dadosDemo = function () {
         justificativa: "O volume é baixo no período de teste e a conferência prévia evita reprocessar cenários já aprovados." })
   ];
 
+  // Perguntas fictícias. As respostas não trazem conclusões jurídicas: só indicam onde a resposta real se apoia.
+  const Q = (codigo, pergunta, categoria, area, perguntadoPor, dataPergunta, status, extra) => Object.assign({
+    codigo, pergunta, categoria, area, perguntadoPor, dataPergunta, status,
+    detalhes: "", resposta: "", respondidoPor: "", dataResposta: "", pareceres: [], normas: []
+  }, extra || {});
+  const perguntas = [
+    Q("QA-001", "Serviços de manutenção de rede contratados de terceiros geram crédito de CBS?", "Créditos de IBS e CBS", "Suprimentos e compras", "Juliana Prado", "2026-08-05", "Respondida",
+      { detalhes: "Dúvida surgida na validação dos pedidos de compra de serviços.", resposta: "Resposta de demonstração. A resposta real é registrada pela área tributária, com base no parecer PT-014.",
+        respondidoPor: "Mariana Costa", dataResposta: "2026-10-21", pareceres: ["PT-014"], normas: ["NR-002"] }),
+    Q("QA-002", "A NF3e precisa destacar IBS e CBS durante o ano de teste?", "Documentos fiscais eletrônicos", "Faturamento", "Lucas Ferreira", "2026-08-20", "Respondida",
+      { resposta: "Resposta de demonstração. A resposta real é registrada pela área fiscal, com base na nota técnica PT-019.",
+        respondidoPor: "Rafael Lima", dataResposta: "2026-09-05", pareceres: ["PT-019"], normas: ["NR-001"] }),
+    Q("QA-003", "Como tratar contratos de serviço assinados antes da reforma?", "Contratos e fornecedores", "Contratos", "Camila Rocha", "2026-09-28", "Aguardando resposta",
+      { detalhes: "Depende do parecer PT-022, ainda em elaboração.", pareceres: ["PT-022"] }),
+    Q("QA-004", "Em que conta contábil fica o IBS a recuperar?", "Contabilidade e apuração", "Contábil", "Diego Martins", "2026-09-10", "Em revisão",
+      { resposta: "Resposta de demonstração em revisão pela área contábil.", respondidoPor: "André Souza", dataResposta: "2026-09-15", pareceres: ["PT-016"] })
+  ];
+
   const H = (entidade, ref, acao, usuario, data, detalhes) => ({ entidade, ref, acao, usuario, data, detalhes: detalhes || "" });
   const historico = [
     H("pareceres", "PT-003", "Aprovado internamente", "Mariana Costa", "2026-04-06T10:12:00"),
@@ -285,5 +310,5 @@ RT.dadosDemo = function () {
     H("pareceres", "PT-014", "Aprovado internamente", "Mariana Costa", "2026-10-21T09:42:00")
   ];
 
-  return { usuarios, pareceres, atividades, impactos, adequacoes, testes, defeitos, normas, marcos, decisoes, historico };
+  return { usuarios, pareceres, perguntas, atividades, impactos, adequacoes, testes, defeitos, normas, marcos, decisoes, historico };
 };

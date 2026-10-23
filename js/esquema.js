@@ -41,6 +41,8 @@ RT.listas = {
   statusNorma: ["Não avaliada", "Em avaliação", "Avaliada"],
   naturezas: ["Legal confirmado", "Previsão oficial", "Interno"],
   situacoesDecisao: ["Vigente", "Substituída", "Revogada"],
+  statusPergunta: ["Aguardando resposta", "Respondida", "Em revisão"],
+  tiposInteracao: ["Solicitação", "Retorno"],
   extensoesAnexo: ["pdf", "docx", "xlsx", "pptx", "csv", "png", "jpg", "jpeg"]
 };
 
@@ -69,6 +71,7 @@ RT.listas = {
         { nome: "categoria", rotulo: "Categoria", tipo: "opcao", opcoes: L.categorias, obrigatorio: true },
         { nome: "origem", rotulo: "Consultoria ou origem", tipo: "texto", obrigatorio: true, max: 255 },
         { nome: "dataRecebimento", rotulo: "Data de recebimento", tipo: "data", obrigatorio: true },
+        { nome: "periodo", rotulo: "Período de elaboração (MM/AAAA)", tipo: "texto", formato: "mesAno", max: 7, ajuda: "Mês e ano em que o parecer foi elaborado. Ex.: 03/2026." },
         { nome: "descricao", rotulo: "Descrição e objetivo", tipo: "textoLongo", obrigatorio: true },
         { nome: "resumo", rotulo: "Resumo executivo", tipo: "textoLongo" },
         { nome: "conclusoes", rotulo: "Principais conclusões", tipo: "textoLongo", ajuda: "Copie do documento original. Pode ficar em branco enquanto a análise não terminar." },
@@ -79,13 +82,38 @@ RT.listas = {
         { nome: "status", rotulo: "Status da análise", tipo: "opcao", opcoes: L.statusParecer, obrigatorio: true, padrao: "Recebido" },
         { nome: "unidades", rotulo: "Unidades impactadas", tipo: "multiOpcao", opcoes: L.unidades },
         { nome: "anexos", rotulo: "Documento original e versões", tipo: "anexos" },
+        { nome: "interacoes", rotulo: "Solicitações e retornos", tipo: "interacoes", sistema: true },
         { nome: "aprovadoPor", rotulo: "Aprovado por", tipo: "texto", sistema: true },
         { nome: "aprovadoEm", rotulo: "Aprovado em", tipo: "texto", sistema: true }
       ],
-      colunas: ["codigo", "titulo", "categoria", "origem", "responsavel", "dataRecebimento", "status"],
+      colunas: ["codigo", "titulo", "categoria", "periodo", "origem", "responsavel", "dataRecebimento", "status"],
       filtros: ["status", "categoria", "responsavel", "unidades", "area"],
       filtroPeriodo: "dataRecebimento",
-      busca: ["codigo", "titulo", "descricao", "resumo", "conclusoes", "legislacao", "origem"]
+      busca: ["codigo", "titulo", "descricao", "resumo", "conclusoes", "legislacao", "origem", "periodo"]
+    },
+
+    perguntas: {
+      rotulo: "Perguntas e respostas", singular: "pergunta", genero: "a", prefixo: "QA", lista: "Perguntas",
+      titulo: r => r.pergunta,
+      descricao: "Dúvidas sobre a reforma e as respostas dadas pela equipe. Uma pergunta só aparece como respondida quando a resposta, quem respondeu e a data estão registrados.",
+      campos: [
+        { nome: "pergunta", rotulo: "Pergunta", tipo: "texto", obrigatorio: true, max: 255 },
+        { nome: "detalhes", rotulo: "Contexto da pergunta", tipo: "textoLongo" },
+        { nome: "categoria", rotulo: "Tema", tipo: "opcao", opcoes: L.categorias, obrigatorio: true },
+        { nome: "area", rotulo: "Área", tipo: "opcao", opcoes: L.areas },
+        { nome: "perguntadoPor", rotulo: "Perguntado por", tipo: "usuario" },
+        { nome: "dataPergunta", rotulo: "Data da pergunta", tipo: "data", obrigatorio: true },
+        { nome: "status", rotulo: "Situação", tipo: "opcao", opcoes: L.statusPergunta, obrigatorio: true, padrao: "Aguardando resposta" },
+        { nome: "resposta", rotulo: "Resposta", tipo: "textoLongo" },
+        { nome: "respondidoPor", rotulo: "Respondido por", tipo: "usuario" },
+        { nome: "dataResposta", rotulo: "Data da resposta", tipo: "data" },
+        { nome: "pareceres", rotulo: "Pareceres que fundamentam a resposta", tipo: "refs", entidade: "pareceres" },
+        { nome: "normas", rotulo: "Normas relacionadas", tipo: "refs", entidade: "normas" }
+      ],
+      colunas: ["codigo", "pergunta", "categoria", "area", "respondidoPor", "dataResposta", "status"],
+      filtros: ["status", "categoria", "area"],
+      filtroPeriodo: "dataPergunta",
+      busca: ["codigo", "pergunta", "detalhes", "resposta"]
     },
 
     atividades: {

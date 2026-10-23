@@ -6,7 +6,21 @@
 window.RT_TESTE = window.RT_TESTE || {};
 
 RT_TESTE.instalarGraphSimulado = function () {
-  const G = { listas: {}, seq: 1, arquivos: {}, sessoes: {}, autor: "mariana.costa@exemplo.com.br", chamadas: [], tamanhoPagina: 5 };
+  // `pasta` simula uma pasta compartilhada de outro drive (Teams/SharePoint): itens por id, com filhos
+  const G = { listas: {}, seq: 1, arquivos: {}, sessoes: {}, autor: "mariana.costa@exemplo.com.br", chamadas: [], tamanhoPagina: 5, pasta: {}, links: [] };
+  G.criarPasta = function (estrutura) {
+    // estrutura: { nome, filhos: [ { nome, filhos } | { nome, conteudo: Uint8Array } ] }
+    const montar = (no, idPai) => {
+      const id = "P" + (G.seq++);
+      const item = { id, nome: no.nome, pai: idPai, filhos: [] };
+      if (no.filhos) { item.folder = true; no.filhos.forEach(f => item.filhos.push(montar(f, id))); }
+      else { item.blob = new Blob([no.conteudo]); item.tamanho = no.conteudo.length; G.arquivos[id] = { blob: item.blob, caminho: no.nome }; }
+      G.pasta[id] = item;
+      return id;
+    };
+    G.raizPasta = montar(estrutura, null);
+    return G.raizPasta;
+  };
   const original = window.fetch;
   const json = (s, b) => new Response(b === null ? null : JSON.stringify(b), { status: s, headers: { "Content-Type": "application/json" } });
 
@@ -42,6 +56,11 @@ RT_TESTE.instalarGraphSimulado = function () {
       G.listas[id] = { nome: corpo.displayName, template: corpo.list.template, colunas: corpo.columns || [], itens: [] };
       return json(201, { id });
     }
+    if ((mm = p.match(/^\/sites\/site1\/lists\/([^/]+)\/columns$/))) {
+      const l = G.listas[mm[1]];
+      if (m === "GET") return json(200, { value: [{ name: "Title" }].concat(l.colunas.map(c => ({ name: c.name }))) });
+      if (m === "POST") { l.colunas.push(corpo); return json(201, corpo); }
+    }
     if ((mm = p.match(/^\/sites\/site1\/lists\/([^/]+)\/drive$/))) {
       return G.listas[mm[1]].template === "documentLibrary" ? json(200, { id: "drive1" }) : json(400, { error: { message: "não é biblioteca" } });
     }
@@ -56,7 +75,22 @@ RT_TESTE.instalarGraphSimulado = function () {
       G.sessoes[k] = { caminho: mm[1], partes: [], recebido: 0 };
       return json(200, { uploadUrl: "https://upload.simulado" + k });
     }
-    if ((mm = p.match(/^\/drives\/drive1\/items\/([^/]+)$/))) {
+    if ((mm = p.match(/^\/shares\/([^/]+)\/driveItem$/))) {
+      G.links.push(mm[1]);
+      const raiz = G.pasta[G.raizPasta];
+      if (!raiz || !mm[1].startsWith("u!")) return json(404, { error: { message: "itemNotFound" } });
+      return json(200, { id: raiz.id, name: raiz.nome, webUrl: "https://empresa.sharepoint.com/pasta", folder: { childCount: raiz.filhos.length }, parentReference: { driveId: "drive2" } });
+    }
+    if ((mm = p.match(/^\/drives\/drive2\/items\/([^/]+)\/children$/))) {
+      const filhos = G.pasta[mm[1]].filhos.map(id => G.pasta[id]);
+      const salto = Number(u.searchParams.get("salto") || 0);
+      const r = { value: filhos.slice(salto, salto + G.tamanhoPagina).map(f => f.folder
+        ? { id: f.id, name: f.nome, folder: { childCount: f.filhos.length } }
+        : { id: f.id, name: f.nome, size: f.tamanho, file: { mimeType: "application/octet-stream" }, createdDateTime: "2026-10-15T13:00:00Z", lastModifiedDateTime: "2026-10-16T09:00:00Z", lastModifiedBy: { user: { displayName: "Consultoria Gama" } }, webUrl: "https://empresa.sharepoint.com/pasta/" + f.nome }) };
+      if (salto + G.tamanhoPagina < filhos.length) r["@odata.nextLink"] = `https://graph.microsoft.com/v1.0${p}?salto=${salto + G.tamanhoPagina}`;
+      return json(200, r);
+    }
+    if ((mm = p.match(/^\/drives\/[^/]+\/items\/([^/]+)$/))) {
       return G.arquivos[mm[1]] ? json(200, { id: mm[1], "@microsoft.graph.downloadUrl": "https://download.simulado/" + mm[1] }) : json(404, { error: { message: "item não encontrado" } });
     }
     if ((mm = p.match(/^\/sites\/site1\/lists\/([^/]+)\/items$/))) {

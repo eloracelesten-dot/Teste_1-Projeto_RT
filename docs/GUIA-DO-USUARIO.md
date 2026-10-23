@@ -30,9 +30,32 @@ Por segurança, a sessão é encerrada depois de 30 minutos sem uso.
 3. **Aprovar:** só um **Gestor** aprova, pelo botão **Aprovar internamente** na tela do parecer. A aprovação fica registrada com nome e data.
 4. **Nova versão do documento:** anexar uma nova versão a um parecer aprovado devolve o parecer para **Análise concluída**, e ele precisa de nova aprovação.
 
+**Documentos que já estão na pasta da equipe:** em **Pareceres e estudos** › **Documentos da pasta**, o portal lista os arquivos da pasta de pareceres (SharePoint, Teams ou OneDrive) que ainda não viraram parecer.
+1. Marque os arquivos.
+2. Confira o título e a data sugeridos.
+3. Complete tipo, categoria, origem, área e descrição. O botão **Aplicar aos selecionados** preenche o mesmo valor em vários de uma vez.
+4. Cadastre.
+
+O documento é copiado para o portal, o link do original fica guardado e o arquivo aparece como "Já cadastrado" na próxima vez. Detalhes na seção 6.3 do [passo a passo](PASSO-A-PASSO-DADOS-REAIS.md).
+
+**Período e histórico do parecer:**
+- **Período de elaboração** guarda o mês e o ano em que o parecer foi feito (`MM/AAAA`).
+- Na tela do parecer, **Solicitações e retornos** mostra a linha do tempo: o que foi pedido à consultoria ou à área e o que voltou.
+- Use **Registrar solicitação** e **Registrar retorno** a cada etapa. Os registros ficam com data e autor e não podem ser apagados.
+
 "Aprovação verificada" quer dizer que o portal confirmou, pelo registro do SharePoint, que um gestor gravou a aprovação.
 
+## Perguntas e respostas
+
+Dúvidas da equipe sobre a reforma e as respostas dadas.
+- Clique numa pergunta para ver a resposta, quem respondeu, quando e em quais pareceres e normas ela se apoia.
+- Os botões **Aguardando resposta**, **Respondida** e **Em revisão** filtram a lista. A pesquisa procura na pergunta e na resposta.
+- **Nova pergunta** registra a dúvida com seu nome e a data de hoje.
+- Uma pergunta só pode ser marcada como **Respondida** com a resposta, quem respondeu e a data.
+
 ## Plano de implementação
+
+- **Plano por área:** no topo, escolha a área (Fiscal e tributária, Contratos…). A tabela, o quadro, o cronograma e os números passam a mostrar só o plano dela, com o resumo da área e os responsáveis com ações em aberto. **Nova ação nesta área** já vem com a área preenchida. **Todas as áreas** volta ao plano completo.
 
 - **Visualizações:**
   - **Tabela:** lista completa, com filtros;
@@ -73,6 +96,17 @@ Uma decisão vigente não é editada.
 - **Listas dos módulos:** também têm os botões **Excel** e **Imprimir ou PDF**.
 
 Toda exportação fica registrada. As planilhas são documentos internos: não compartilhe fora da empresa.
+
+## Importar planilha (Gestor e Administrador)
+
+Para cadastrar muitos registros de uma vez, use o menu **Importar planilha**:
+1. Escolha o módulo e baixe o modelo em Excel.
+2. Preencha uma linha por registro.
+3. Envie o arquivo.
+4. Confira as colunas.
+5. Valide e grave.
+
+Linhas com erro não são gravadas e aparecem com o motivo, e o relatório de problemas pode ser baixado em Excel. O passo a passo completo está em [PASSO-A-PASSO-DADOS-REAIS.md](PASSO-A-PASSO-DADOS-REAIS.md), seção 6.4.
 
 ## Arquivar em vez de excluir
 

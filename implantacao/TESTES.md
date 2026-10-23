@@ -6,11 +6,11 @@
 python -m http.server 8765 --bind 127.0.0.1
 ```
 
-Abra `http://localhost:8765/tests/`. Os 42 testes rodam sozinhos em cerca de 1 segundo e mostram o resultado de cada um. Nada é gravado: os dados são os de demonstração e o SharePoint é simulado.
+Abra `http://localhost:8765/tests/`. Os 59 testes rodam sozinhos em poucos segundos e mostram o resultado de cada um. Nada é gravado: os dados são os de demonstração e o SharePoint é simulado.
 
 Rode a suíte a cada mudança no código e antes de cada publicação.
 
-**Último resultado: 42 de 42 passaram** (21/10/2026, Edge/Chromium).
+**Último resultado: 59 de 59 passaram** (23/10/2026, Edge/Chromium).
 
 ## O que os testes cobrem
 
@@ -26,6 +26,9 @@ Rode a suíte a cada mudança no código e antes de cada publicação.
 | T31–T35 | Relatórios e planilhas Excel |
 | T36–T41 | SharePoint (Graph simulado): listas, paginação, conflito, anexos em partes, autoria, remoção |
 | T42 | Perfil pelos papéis do Entra ID |
+| T43–T49 | Importação de planilhas: leitura de arquivo salvo pelo Excel, modelo, validação linha a linha, gravação com histórico, permissões e relatório de problemas |
+| T50–T54 | Pareceres a partir de uma pasta: leitura de pasta compartilhada com subpastas e paginação, cadastro com cópia do documento e link do original, arquivos já cadastrados, linhas incompletas, conteúdo falso, arquivos do computador, permissões |
+| T55–T59 | Perguntas e respostas, período MM/AAAA do parecer (inclusive vindo do Excel), solicitações e retornos, plano por área, colunas novas em listas já existentes no SharePoint |
 
 ## Matriz de requisitos
 
@@ -60,6 +63,11 @@ Cada requisito do pedido original, onde está e como foi verificado.
 | Documentos sem acesso anônimo | Static Web Apps + SharePoint | Configurado; depende de publicação |
 | Dados de demonstração identificados e removíveis | `demonstracao: true` | T22, T41 |
 | Identidade personalizável (logotipo, nome, cores) | `config.js`, variáveis CSS | Conferência manual |
+| Perguntas e respostas | `esquema.perguntas`, `telas.perguntas` | T55 |
+| Período de elaboração (MM/AAAA) e histórico de solicitações e retornos do parecer | `esquema.pareceres`, `telas.detalhe` | T56, T57 |
+| Plano de implementação por área | `telas.plano` | T58 |
+| Pareceres puxados da pasta de documentos da equipe (SharePoint, Teams, OneDrive) | `js/pasta.js` | T50–T54 (pasta simulada no Graph) e teste pela tela com arquivos do computador |
+| Carga de dados em lote a partir de planilhas, com validação antes de gravar | `js/importacao.js` | T43–T49, com planilha de teste salva pelo Excel (`tests/fixtures/importacao-excel.xlsx`) |
 
 ## Experiência e acessibilidade
 

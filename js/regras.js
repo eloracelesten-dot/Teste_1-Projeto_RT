@@ -30,7 +30,7 @@ RT.regras = (function () {
   const PODE_EDITAR_TUDO = ["Administrador", "Gestor"];
 
   function camposDeResponsavel(registro) {
-    return ["responsavel", "respTecnico", "respTributario", "executadoPor", "aprovador", "criadoPor"]
+    return ["responsavel", "respTecnico", "respTributario", "executadoPor", "aprovador", "perguntadoPor", "respondidoPor", "criadoPor"]
       .map(c => registro[c]).filter(Boolean);
   }
 
@@ -44,6 +44,7 @@ RT.regras = (function () {
     if (acao === "aprovar") return perfil === "Gestor";
     if (acao === "exportar") return true; // Consulta já saiu acima: não exporta
     if (acao === "auditoria") return PODE_EDITAR_TUDO.includes(perfil);
+    if (acao === "importar") return PODE_EDITAR_TUDO.includes(perfil);
     if (entidade === "decisoes" && ["criar", "novaVersao", "revogar"].includes(acao)) return perfil === "Gestor";
     if (entidade === "decisoes" && acao === "editar") return false; // decisões mudam por nova versão
     if (acao === "arquivar") return PODE_EDITAR_TUDO.includes(perfil);
@@ -85,6 +86,7 @@ RT.regras = (function () {
       if (c.obrigatorio && vazio) { erros[c.nome] = "Campo obrigatório."; continue; }
       if (vazio) continue;
       if (c.tipo === "texto" && c.max && String(v).length > c.max) erros[c.nome] = `Máximo de ${c.max} caracteres.`;
+      if (c.formato === "mesAno" && !/^(0[1-9]|1[0-2])\/(19|20)\d{2}$/.test(String(v))) erros[c.nome] = "Use o formato MM/AAAA, por exemplo 03/2026.";
       if (c.tipo === "textoLongo" && String(v).length > LIMITE_TEXTO_LONGO) erros[c.nome] = `Máximo de ${LIMITE_TEXTO_LONGO.toLocaleString("pt-BR")} caracteres.`;
       if (c.tipo === "numero") {
         const n = Number(v);
@@ -115,6 +117,14 @@ RT.regras = (function () {
       if (!dados.obtido) erros.obtido = "Informe o resultado obtido.";
       if (!dados.executadoEm) erros.executadoEm = "Informe a data de execução.";
       if (!dados.executadoPor) erros.executadoPor = "Informe quem executou.";
+    }
+    if (entidade === "perguntas") {
+      if (dados.status === "Respondida") {
+        if (!dados.resposta) erros.resposta = "Uma pergunta respondida precisa da resposta.";
+        if (!dados.respondidoPor) erros.respondidoPor = "Informe quem respondeu.";
+        if (!dados.dataResposta) erros.dataResposta = "Informe a data da resposta.";
+      }
+      if (dados.dataResposta && dados.dataPergunta && dados.dataResposta < dados.dataPergunta) erros.dataResposta = "A resposta não pode ser anterior à pergunta.";
     }
     if (entidade === "marcos") {
       if (!dados.data && !dados.dataTexto) erros.data = "Informe a data ou descreva o período.";

@@ -22,15 +22,15 @@ RT.telas = (function () {
   };
 
   const MODULO_DA_ENTIDADE = {
-    pareceres: "pareceres", atividades: "plano", impactos: "impactos", adequacoes: "sistemas", testes: "sistemas",
+    pareceres: "pareceres", perguntas: "perguntas", atividades: "plano", impactos: "impactos", adequacoes: "sistemas", testes: "sistemas",
     defeitos: "sistemas", normas: "legislacao", marcos: "legislacao", decisoes: "decisoes", usuarios: "administracao"
   };
   const ROTULO_MODULO = {
-    pareceres: "Pareceres e estudos", plano: "Plano de implementação", impactos: "Mapeamento de impactos",
+    pareceres: "Pareceres e estudos", perguntas: "Perguntas e respostas", plano: "Plano de implementação", impactos: "Mapeamento de impactos",
     sistemas: "Sistemas e testes", legislacao: "Legislação e cronograma", decisoes: "Decisões e diretrizes", administracao: "Administração"
   };
   const CAMPO_TITULO = {
-    pareceres: "titulo", atividades: "nome", impactos: "processo", adequacoes: "requisito", testes: "cenario",
+    pareceres: "titulo", perguntas: "pergunta", atividades: "nome", impactos: "processo", adequacoes: "requisito", testes: "cenario",
     defeitos: "descricao", normas: "titulo", marcos: "titulo", decisoes: "assunto", usuarios: "nome"
   };
   const ROTULO_COLUNA = {
@@ -498,10 +498,60 @@ RT.telas = (function () {
     }).join("");
     return {
       titulo: "Pareceres e estudos",
-      html: `${cabecalho({ titulo: "Pareceres e estudos", descricao: esc(E().pareceres.descricao), acoes: botaoNovo("pareceres", "Novo parecer") })}
+      html: `${cabecalho({ titulo: "Pareceres e estudos", descricao: esc(E().pareceres.descricao),
+        acoes: (pode("criar", "pareceres") ? `<a class="botao" href="#pareceres/pasta">Documentos da pasta</a>` : "") + botaoNovo("pareceres", "Novo parecer") })}
         <div class="chips" role="group" aria-label="Status">${chips}</div>
         ${blocoLista("pareceres")}`
     };
+  }
+
+  // ======================================================================
+  // Perguntas e respostas
+  // ======================================================================
+  function perguntas() {
+    const todas = repo().listar("perguntas");
+    const f = filtrosDe("perguntas");
+    const chips = ["", ...RT.listas.statusPergunta].map(s => {
+      const n = s ? todas.filter(p => p.status === s).length : todas.length;
+      const ativo = (f.campos.status || "") === s;
+      return `<button type="button" class="chip${ativo ? " ativo" : ""}" aria-pressed="${ativo}" data-acao="filtro-rapido" data-ent="perguntas" data-campo="status" data-valor="${esc(s)}">${esc(s || "Todas")} <span class="num">${n}</span></button>`;
+    }).join("");
+    const opcoes = {
+      render: (registros, total) => registros.length
+        ? `<div class="faq">${registros.map(cartaoPergunta).join("")}</div>
+           <div class="rodape-tabela">${registros.length === total ? `${total} pergunta${total === 1 ? "" : "s"}` : `${registros.length} de ${total} perguntas`}. Clique numa pergunta para ver a resposta.</div>`
+        : `<div class="vazio">Nenhuma pergunta encontrada com esses filtros.</div>`
+    };
+    return {
+      titulo: "Perguntas e respostas",
+      html: `${cabecalho({ titulo: "Perguntas e respostas", descricao: esc(E().perguntas.descricao), acoes: botaoNovo("perguntas", "Nova pergunta") })}
+        <div class="chips" role="group" aria-label="Situação">${chips}</div>
+        ${blocoLista("perguntas", opcoes)}`
+    };
+  }
+
+  function cartaoPergunta(r) {
+    const quem = [
+      r.perguntadoPor ? `Perguntada por ${esc(r.perguntadoPor)} em ${fmtData(r.dataPergunta)}` : `Perguntada em ${fmtData(r.dataPergunta)}`,
+      r.respondidoPor ? `respondida por ${esc(r.respondidoPor)} em ${fmtData(r.dataResposta)}` : ""
+    ].filter(Boolean).join(" · ");
+    const vinc = [
+      (r.pareceres || []).length ? `<span class="muted">Pareceres:</span> ${vinculos("pareceres", r.pareceres)}` : "",
+      (r.normas || []).length ? `<span class="muted">Normas:</span> ${vinculos("normas", r.normas)}` : ""
+    ].filter(Boolean).join(" ");
+    return `<details class="faq-item${r.arquivado ? " linha-apagada" : ""}">
+      <summary>
+        <span class="faq-pergunta">${esc(r.pergunta)}</span>
+        <span class="faq-meta">${tag(r.status)}${r.arquivado ? " " + tag("Arquivado") : ""} <span class="muted">${esc(r.codigo)} · ${esc(r.categoria)}${r.area ? " · " + esc(r.area) : ""}</span></span>
+      </summary>
+      <div class="faq-corpo">
+        ${r.detalhes ? `<p class="faq-contexto">${esc(r.detalhes).replace(/\n/g, "<br>")}</p>` : ""}
+        ${r.resposta ? `<div class="faq-resposta">${esc(r.resposta).replace(/\n/g, "<br>")}</div>` : `<p class="muted">Ainda sem resposta.</p>`}
+        <p class="item-sub">${quem}</p>
+        ${vinc ? `<p class="faq-vinculos">${vinc}</p>` : ""}
+        <a class="link" href="${U.rotaRegistro("perguntas", r.codigo)}">Abrir ${esc(r.codigo)}</a>
+      </div>
+    </details>`;
   }
 
   // ======================================================================
@@ -516,9 +566,26 @@ RT.telas = (function () {
   };
 
   function plano() {
-    const ind = R().indicadores(repo().todos()).atividades;
-    const todas = repo().listar("atividades");
+    // A área escolhida é o filtro "Frente de trabalho" da lista: tabela, quadro, cronograma e números seguem a mesma área
+    const area = filtrosDe("atividades").campos.frente || "";
+    const todasGeral = repo().listar("atividades");
+    const todas = area ? todasGeral.filter(a => a.frente === area) : todasGeral;
+    const ind = R().indicadores(Object.assign({}, repo().todos(), { atividades: todas })).atividades;
     const vista = estado.plano.vista;
+    const seletorArea = `<div class="seletor-area" role="group" aria-label="Escolha a área">
+        <span class="seletor-rotulo">Área</span>
+        ${[["", "Todas as áreas", todasGeral.length]].concat(RT.listas.areas.map(a => [a, a, todasGeral.filter(x => x.frente === a).length]))
+          .map(([valor, rotulo, n]) => `<button type="button" class="chip${valor === area ? " ativo" : ""}" aria-pressed="${valor === area}" data-acao="plano-area" data-valor="${esc(valor)}">${esc(rotulo)} <span class="num">${n}</span></button>`).join("")}
+      </div>`;
+    const responsaveis = [...new Set(todas.filter(a => !R().encerrada(a)).map(a => a.responsavel).filter(Boolean))].sort((x, y) => x.localeCompare(y, "pt-BR"));
+    const resumoArea = area ? `<section class="bloco resumo-area">
+        <div class="bloco-corpo">
+          <div class="resumo-area-cab"><h2>Plano de ${esc(area)}</h2><span class="meta">${ind.total} aç${ind.total === 1 ? "ão" : "ões"} · ${ind.percentual}% concluído</span></div>
+          <div class="barra-mini" aria-hidden="true" style="margin-top:8px"><span style="width:${ind.percentual}%;background:var(--acento-600)"></span></div>
+          <p class="item-sub" style="margin-top:10px">${responsaveis.length ? `Responsáveis com ações em aberto: ${esc(responsaveis.join(", "))}` : "Nenhuma ação em aberto nesta área."}</p>
+        </div></section>` : "";
+    const linkNova = pode("criar", "atividades")
+      ? `<a class="botao primario" href="#atividades/novo${area ? `?frente=${encodeURIComponent(area)}&area=${encodeURIComponent(area)}` : ""}">${icone.mais}Nova ação${area ? " nesta área" : ""}</a>` : "";
     const chips = Object.entries(DESTAQUES).map(([k, d]) => {
       const n = todas.filter(a => d.f(a, todas)).length;
       const ativo = estado.plano.destaque === k;
@@ -539,7 +606,9 @@ RT.telas = (function () {
 
     return {
       titulo: "Plano de implementação",
-      html: `${cabecalho({ titulo: "Plano de implementação", descricao: esc(E().atividades.descricao), acoes: botaoNovo("atividades", "Nova ação") })}
+      html: `${cabecalho({ titulo: "Plano de implementação", descricao: esc(E().atividades.descricao), acoes: linkNova })}
+        ${seletorArea}
+        ${resumoArea}
         <div class="kpis kpis-5">
           ${kpi("Atrasadas", ind.atrasadas, "", ind.atrasadas ? "alerta" : "")}
           ${kpi("Críticas em aberto", ind.criticasAbertas)}
@@ -786,6 +855,102 @@ RT.telas = (function () {
     };
   }
 
+  // ======================================================================
+  // Importar planilha
+  // ======================================================================
+  function importar() {
+    if (!pode("importar")) return semPermissao();
+    const I = RT.importacao;
+    const st = estado.importacao || (estado.importacao = {});
+    const entidades = I.ENTIDADES.filter(ent => pode("criar", ent));
+    const ent = st.ent && entidades.includes(st.ent) ? st.ent : "";
+    const e = ent ? E()[ent] : null;
+    const passo = (n, titulo, corpo, ativo) => `<section class="bloco passo${ativo ? "" : " passo-inativo"}">
+      <div class="bloco-cab"><h2><span class="passo-num">${n}</span>${esc(titulo)}</h2></div><div class="bloco-corpo">${corpo}</div></section>`;
+
+    // 1. Módulo e modelo
+    const p1 = `<div class="filtros" style="padding:0;border:0">
+        <div class="campo"><label for="imp-ent">Módulo</label>
+          <select id="imp-ent" data-importar="ent"><option value="">Selecione</option>${entidades.map(x => `<option value="${x}"${x === ent ? " selected" : ""}>${esc(E()[x].rotulo)}</option>`).join("")}</select></div>
+        <div class="campo campo-fim"><button type="button" class="botao" data-acao="importar-modelo"${ent ? "" : " disabled"}>Baixar modelo em Excel</button></div>
+      </div>
+      <p class="texto-corrido" style="margin:12px 0 0">O modelo traz as colunas do módulo e uma aba de instruções com o que é obrigatório e os valores aceitos. Se você já tem uma planilha, basta que os títulos das colunas tenham os mesmos nomes do modelo.</p>`;
+
+    // 2. Arquivo
+    let p2 = `<div class="campo"><label for="imp-arq">Planilha (.xlsx, até ${I.LIMITE_LINHAS} linhas)</label><input id="imp-arq" type="file" accept=".xlsx" data-importar="arquivo"${ent ? "" : " disabled"}></div>`;
+    if (st.abas) {
+      p2 += `<p class="texto-corrido" style="margin:12px 0 0">Arquivo: <strong>${esc(st.nomeArquivo)}</strong></p>`;
+      if (st.abas.length > 1) {
+        p2 += `<div class="campo" style="max-width:320px;margin-top:8px"><label for="imp-aba">Aba com os dados</label><select id="imp-aba" data-importar="aba">${st.abas.map((a, i) => `<option value="${i}"${i === st.aba ? " selected" : ""}>${esc(a.nome)} (${Math.max(a.linhas.length - 1, 0)} linhas)</option>`).join("")}</select></div>`;
+      }
+    }
+
+    // 3. Colunas
+    let p3 = `<p class="muted">Envie a planilha para conferir as colunas.</p>`;
+    if (st.abas && ent) {
+      const aba = st.abas[st.aba];
+      const cab = (aba.linhas[0] || []).map(c => c ? String(c.v) : "");
+      const campos = I.camposImportaveis(ent);
+      const usados = new Set(st.mapeamento.filter(Boolean));
+      const faltando = campos.filter(c => c.obrigatorio && c.padrao === undefined && !usados.has(c.nome));
+      p3 = cab.length ? `<div class="tabela-wrap"><table>
+          <thead><tr><th>Coluna da planilha</th><th>Campo do portal</th></tr></thead>
+          <tbody>${cab.map((h, i) => `<tr><td>${esc(h || `(coluna ${i + 1} sem título)`)}</td><td>
+            <label class="sr-only" for="imp-mapa-${i}">Campo para a coluna ${esc(h)}</label>
+            <select id="imp-mapa-${i}" data-importar="mapa" data-indice="${i}"><option value="">Ignorar esta coluna</option><option value="codigo"${st.mapeamento[i] === "codigo" ? " selected" : ""}>Código</option>
+            ${campos.map(c => `<option value="${c.nome}"${st.mapeamento[i] === c.nome ? " selected" : ""}>${esc(c.rotulo)}${c.obrigatorio ? " *" : ""}</option>`).join("")}</select></td></tr>`).join("")}</tbody>
+        </table></div>
+        ${faltando.length ? `<p class="aviso-campo">Campos obrigatórios sem coluna: ${esc(faltando.map(c => c.rotulo).join(", "))}. As linhas vão aparecer com erro.</p>` : ""}
+        <div class="acoes" style="margin-top:14px"><button type="button" class="botao primario" data-acao="importar-validar">Validar linhas</button></div>`
+        : `<p class="aviso-campo">A primeira linha da aba está vazia: ela precisa ter os títulos das colunas.</p>`;
+    }
+
+    // 4. Validação e gravação
+    let p4 = `<p class="muted">A validação mostra, linha a linha, o que pode ser gravado. Nada é gravado antes da sua confirmação.</p>`;
+    if (st.resultado) {
+      const r = st.resultado;
+      p4 = `<div class="verificacao ${r.falhas.length ? "falha" : "ok"}" style="margin:0 0 12px"><strong>${r.gravadas.length} registro${r.gravadas.length === 1 ? "" : "s"} gravado${r.gravadas.length === 1 ? "" : "s"}.</strong>
+        ${r.falhas.length ? ` ${r.falhas.length} não puderam ser gravados.` : ""}</div>
+        ${r.falhas.length ? `<ul class="lista-simples">${r.falhas.map(f => `<li>Linha ${f.numero}: ${esc(f.motivo)}</li>`).join("")}</ul>` : ""}
+        <div class="acoes" style="margin-top:14px"><a class="botao primario" href="#${T_MODULO[ent] || ent}">Ver ${esc(e.rotulo)}</a><button type="button" class="botao" data-acao="importar-reiniciar">Importar outra planilha</button></div>`;
+    } else if (st.validacao) {
+      const v = st.validacao;
+      const comErro = v.linhas.filter(l => l.erros.length);
+      const comAviso = v.linhas.filter(l => !l.erros.length && l.avisos.length);
+      const validas = v.linhas.length - comErro.length;
+      const mostrar = (st.soProblemas ? v.linhas.filter(l => l.erros.length || l.avisos.length) : v.linhas).slice(0, 500);
+      p4 = `<div class="kpis kpis-4" style="margin-bottom:16px">
+          ${kpi("Linhas lidas", v.linhas.length, v.ignoradas ? `${v.ignoradas} vazias ignoradas` : "")}
+          ${kpi("Prontas para gravar", validas, "", "", "var(--verde)")}
+          ${kpi("Com erro", comErro.length, "não serão gravadas", comErro.length ? "alerta" : "", "var(--vermelho)")}
+          ${kpi("Com aviso", comAviso.length, "serão gravadas", "", "var(--ambar)")}
+        </div>
+        <label class="alternar"><input type="checkbox" data-importar="so-problemas"${st.soProblemas ? " checked" : ""}><span class="alternar-trilho"></span>Mostrar só linhas com problema</label>
+        <div class="tabela-wrap" style="margin-top:12px"><table>
+          <thead><tr><th>Linha</th><th>Código</th><th>Registro</th><th>Situação</th><th>Problemas</th></tr></thead>
+          <tbody>${mostrar.map(l => `<tr class="${l.erros.length ? "linha-alerta" : ""}"><td class="num">${l.numero}</td><td class="codigo">${esc(l.codigo)}</td>
+            <td>${esc(e.titulo(l.dados) || "—")}</td>
+            <td>${l.erros.length ? tag("Reprovado").replace("Reprovado", "Com erro") : l.avisos.length ? tag("Em correção").replace("Em correção", "Com aviso") : tag("Aprovado").replace("Aprovado", "Pronta")}</td>
+            <td class="problemas">${l.erros.concat(l.avisos).map(esc).join("<br>") || '<span class="muted">—</span>'}</td></tr>`).join("")}</tbody>
+        </table></div>
+        ${v.linhas.length > 500 ? `<p class="muted" style="margin-top:8px">Mostrando 500 de ${v.linhas.length} linhas. O relatório em Excel traz todas as linhas com problema.</p>` : ""}
+        <div class="acoes" style="margin-top:16px">
+          <button type="button" class="botao primario" data-acao="importar-gravar"${validas ? "" : " disabled"}>Gravar ${validas} linha${validas === 1 ? "" : "s"} válida${validas === 1 ? "" : "s"}</button>
+          ${comErro.length || comAviso.length ? `<button type="button" class="botao" data-acao="importar-relatorio">Baixar relatório de problemas</button>` : ""}
+        </div>`;
+    }
+
+    return {
+      titulo: "Importar planilha",
+      html: `${cabecalho({ titulo: "Importar planilha", descricao: "Carregue registros em lote a partir de uma planilha Excel. Cada linha é conferida antes da gravação, com as mesmas regras do cadastro manual, e cada registro gravado fica no histórico com o nome do arquivo e o número da linha." })}
+        ${passo(1, "Escolha o módulo", p1, true)}
+        ${passo(2, "Envie a planilha", p2, Boolean(ent))}
+        ${passo(3, "Confira as colunas", p3, Boolean(st.abas))}
+        ${passo(4, "Valide e grave", p4, Boolean(st.validacao || st.resultado))}`
+    };
+  }
+  const T_MODULO = { atividades: "plano", adequacoes: "sistemas/adequacoes", testes: "sistemas/testes", defeitos: "sistemas/defeitos", normas: "legislacao", marcos: "legislacao", usuarios: "administracao" };
+
   // Registros de uma lista com os mesmos filtros e ordem exibidos na tela
   function registrosFiltrados(ent) {
     const op = estado.fontes[ent] || {};
@@ -1007,6 +1172,19 @@ RT.telas = (function () {
     }
 
     // Versões da decisão
+    let blocoInteracoes = "";
+    if (ent === "pareceres") {
+      const lista = (r.interacoes || []).slice().sort((a, b) => (a.data || "").localeCompare(b.data || "") || (a.registradoEm || "").localeCompare(b.registradoEm || ""));
+      const podeRegistrar = pode("editar", ent, r) && !r.arquivado;
+      blocoInteracoes = `<section class="bloco"><div class="bloco-cab"><h2>Solicitações e retornos</h2>
+          ${podeRegistrar ? `<span class="acoes"><button type="button" class="botao pequeno" data-acao="registrar-interacao" data-tipo="Solicitação" data-codigo="${esc(r.codigo)}">Registrar solicitação</button><button type="button" class="botao pequeno" data-acao="registrar-interacao" data-tipo="Retorno" data-codigo="${esc(r.codigo)}">Registrar retorno</button></span>` : ""}</div>
+        <div class="bloco-corpo">${lista.length
+          ? `<ol class="interacoes">${lista.map(i => `<li class="interacao ${i.tipo === "Retorno" ? "retorno" : "solicitacao"}">
+              <div class="interacao-cab"><span class="tag ${i.tipo === "Retorno" ? "t-concluida" : "t-andamento"}">${esc(i.tipo)}</span> <strong>${fmtData(i.data)}</strong> <span class="muted">registrado por ${esc(i.registradoPor)}</span></div>
+              <p>${esc(i.texto).replace(/\n/g, "<br>")}</p></li>`).join("")}</ol>`
+          : `<p class="muted">Nenhuma solicitação ou retorno registrado. Registre o que foi pedido e o que voltou, para guardar a história deste parecer.</p>`}</div></section>`;
+    }
+
     let blocoVersoes = "";
     if (e.versionada) {
       const vs = repo().versoes(ent, r.codigo);
@@ -1041,7 +1219,7 @@ RT.telas = (function () {
         <div class="detalhe">
           <div class="pilha">
             ${corpoLongo || corpoAnexos ? `<section class="bloco"><div class="bloco-corpo texto-bloco">${corpoLongo}${corpoAnexos}</div></section>` : ""}
-            ${blocoVersoes}${blocoDeps}${blocoVinculos}
+            ${blocoInteracoes}${blocoVersoes}${blocoDeps}${blocoVinculos}
             <section class="bloco"><div class="bloco-cab"><h2>Histórico</h2><span class="meta">${hist.length}</span></div>${tabelaHistorico(hist, false)}</section>
           </div>
           <aside class="bloco"><div class="bloco-corpo"><dl class="meta-lista">
@@ -1071,6 +1249,7 @@ RT.telas = (function () {
     if (modo === "novo" && params) for (const [k, v] of params) if (e.campo(k)) valores[k] = v;
     if (modo === "novo" && ent === "defeitos") valores.abertoEm = valores.abertoEm || R().hojeISO();
     if (modo === "novo" && ent === "pareceres") valores.dataRecebimento = valores.dataRecebimento || R().hojeISO();
+    if (modo === "novo" && ent === "perguntas") { valores.dataPergunta = valores.dataPergunta || R().hojeISO(); valores.perguntadoPor = valores.perguntadoPor || usuario().nome; }
     if (modo === "nova-versao") { valores.dataDecisao = R().hojeISO(); valores.aprovador = usuario().nome; }
 
     const ctx = { registro, usuario: usuario() };
@@ -1107,7 +1286,7 @@ RT.telas = (function () {
 
   return {
     estado, filtrosDe, atualizarLista, MODULO_DA_ENTIDADE,
-    visaoGeral, pareceres, plano, impactos, sistemas, legislacao, decisoes, relatorios, relatorio, administracao, busca,
+    visaoGeral, pareceres, perguntas, plano, impactos, sistemas, legislacao, decisoes, relatorios, relatorio, administracao, busca, importar,
     filtrosDoRelatorio, descricaoFiltros, registrosFiltrados, planilhaDaLista,
     detalhe, formulario, naoEncontrado
   };

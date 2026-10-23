@@ -35,6 +35,7 @@
     RT.telas.estado.fontes = {};
     RT.telas.estado.relatorios = {};
     RT.telas.estado.plano = { vista: "tabela", destaque: "todas" };
+    RT.telas.estado.pasta = undefined;
     await repo().iniciar(new RT.AdaptadorMemoria());
     await repo().carregarDemonstracao(null);
     RT.telas.estado.usuario = gestor();
@@ -338,6 +339,8 @@
       () => T.sistemas("adequacoes"), () => T.sistemas("testes"), () => T.sistemas("defeitos"),
       () => T.detalhe("pareceres", "PT-014"), () => T.detalhe("atividades", "AT-036"), () => T.detalhe("impactos", "IM-008"),
       () => T.detalhe("adequacoes", "AS-03"), () => T.detalhe("testes", "CT-011"), () => T.detalhe("defeitos", "DF-002"),
+      () => T.perguntas(), () => T.detalhe("perguntas", "QA-001"), () => T.formulario("perguntas", null, "novo"),
+      () => { T.filtrosDe("atividades").campos.frente = "Contratos"; const t = T.plano(); T.filtrosDe("atividades").campos.frente = ""; return t; },
       () => T.detalhe("normas", "NR-001"), () => T.detalhe("marcos", "MC-004"), () => T.detalhe("decisoes", "DC-012"),
       () => T.formulario("pareceres", null, "novo"), () => T.formulario("atividades", "AT-012", "editar"),
       () => T.formulario("decisoes", "DC-012", "nova-versao"),
@@ -478,7 +481,7 @@
   teste("T36", "SharePoint: criação das listas e da biblioteca com colunas tipadas", async () => {
     await comSharePoint(async (G, novo) => {
       const sp = novo();
-      igual((await sp.verificarListas()).length, 12);
+      igual((await sp.verificarListas()).length, 13);
       await sp.criarListas();
       igual(await sp.verificarListas(), []);
       const pareceres = Object.values(G.listas).find(l => l.nome === "RT_Pareceres");
@@ -581,6 +584,316 @@
       igual(RT.app.identificarUsuario({ username: "novo@exemplo.com.br", name: "Novo" }).perfil, "Consulta", "fora da lista");
       igual(RT.app.identificarUsuario({ username: "MARIANA.COSTA@exemplo.com.br", name: "M" }).perfil, "Gestor", "lista, e-mail sem diferença de maiúsculas");
     } finally { RT.auth.papeis = papeis; RT.config.perfisPeloEntra = cfg; }
+  });
+
+  // =====================================================================
+  // Importação de planilhas
+  // =====================================================================
+  async function planilhaDoExcel() {
+    const resp = await fetch("fixtures/importacao-excel.xlsx", { cache: "reload" });
+    return new File([await resp.blob()], "importacao-excel.xlsx");
+  }
+  const I = () => RT.importacao;
+  const cabecalhoDe = aba => (aba.linhas[0] || []).map(c => c ? String(c.v) : "");
+  const linhaNumero = (v, n) => v.linhas.find(l => l.numero === n);
+
+  teste("T43", "Importação: lê uma planilha salva pelo Excel (compactada, com estilos e fórmulas)", async () => {
+    const abas = await I().lerPlanilha(await planilhaDoExcel());
+    igual(abas.map(a => a.nome), ["Ações", "Pareceres"]);
+    const l2 = abas[0].linhas[1];
+    igual([l2[0].v, l2[1].v], ["AT-900", "Mapear CFOP para IBS e CBS"], "textos compartilhados");
+    ok(l2[6].data && I().dataDeSerial(l2[6].v) === "2026-11-01", "célula de data (fórmula DATE)");
+    igual(l2[10].v, 0.6, "porcentagem");
+    igual(abas[0].linhas[2][6].v, "15/11/2026", "data digitada como texto");
+    ok(abas[0].linhas[2][7].data, "formato de data d/m/yyyy reconhecido");
+    await lanca(() => I().lerPlanilha(new File(["a;b"], "dados.csv")), ".xlsx");
+    await lanca(() => I().lerPlanilha(new File(["não é zip"], "falso.xlsx")), "não é uma planilha");
+  });
+
+  teste("T44", "Importação: o modelo gerado pelo portal é lido de volta com as mesmas colunas", async () => {
+    await base();
+    const blob = I().modelo("atividades");
+    const abas = await I().lerPlanilha(new File([blob], "modelo.xlsx"));
+    igual(abas.map(a => a.nome), ["Sobre", "Plano de implementação", "Instruções"]);
+    const mapa = I().mapearAutomatico("atividades", cabecalhoDe(abas[1]));
+    igual(mapa[0], "codigo");
+    igual(mapa.filter(Boolean).length, cabecalhoDe(abas[1]).length, "todas as colunas do modelo reconhecidas");
+  });
+
+  teste("T45", "Importação: validação linha a linha da aba de ações", async () => {
+    await base();
+    const aba = (await I().lerPlanilha(await planilhaDoExcel()))[0];
+    const v = I().validar("atividades", aba, I().mapearAutomatico("atividades", cabecalhoDe(aba)));
+    igual(v.linhas.map(l => l.numero), [2, 3, 4, 6, 7], "linha vazia ignorada");
+    igual(v.ignoradas, 1);
+    const l2 = linhaNumero(v, 2);
+    igual(l2.erros, [], "linha 2 válida");
+    igual([l2.codigo, l2.dados.inicio, l2.dados.prazo, l2.dados.percentual, l2.dados.documentos], ["AT-900", "2026-11-01", "2026-11-30", 60, ["PT-014"]]);
+    const l3 = linhaNumero(v, 3);
+    igual(l3.erros, [], "linha 3 válida");
+    igual([l3.dados.status, l3.dados.inicio, l3.dados.prazo, l3.dados.dependencias], ["Em andamento", "2026-11-15", "2026-12-20", ["AT-900"]], "texto normalizado e vínculo com outra linha da planilha");
+    ok(/^AT-\d{3}$/.test(l3.codigo) && l3.codigo !== "AT-900", "código gerado");
+    const e4 = linhaNumero(v, 4).erros.join(" | ");
+    ["Frente de trabalho", "Fulano de Tal", "Prazo previsto", "AT-999"].forEach(t => ok(e4.includes(t), `linha 4 deveria acusar ${t}: ${e4}`));
+    const e6 = linhaNumero(v, 6).erros.join(" | ");
+    ok(e6.includes("Urgente") && e6.includes("dela mesma"), "linha 6: prioridade e autodependência juntas: " + e6);
+    ok(linhaNumero(v, 7).erros.join(" ").includes("data de conclusão"), "linha 7: concluída sem data");
+  });
+
+  teste("T46", "Importação: parecer não entra aprovado; escolha múltipla separada por ponto e vírgula", async () => {
+    await base();
+    const aba = (await I().lerPlanilha(await planilhaDoExcel()))[1];
+    const v = I().validar("pareceres", aba, I().mapearAutomatico("pareceres", cabecalhoDe(aba)));
+    const ok2 = linhaNumero(v, 2);
+    igual(ok2.erros, []);
+    igual([ok2.dados.unidades, ok2.dados.dataRecebimento, ok2.dados.status], [["Distribuição", "Transmissão"], "2026-10-20", "Recebido"]);
+    ok(linhaNumero(v, 3).erros.join(" ").includes("aprovação é feita no portal"), "aprovado recusado");
+  });
+
+  teste("T47", "Importação: grava só as linhas válidas, com histórico; reenviar não duplica códigos", async () => {
+    await base();
+    const aba = (await I().lerPlanilha(await planilhaDoExcel()))[0];
+    const mapa = I().mapearAutomatico("atividades", cabecalhoDe(aba));
+    const v = I().validar("atividades", aba, mapa);
+    const antes = repo().listar("atividades").length;
+    const r = await I().gravar("atividades", v, gestor(), "importacao-excel.xlsx");
+    igual(r.gravadas.length, 2, "duas linhas válidas");
+    igual(repo().listar("atividades").length, antes + 2);
+    igual(repo().historicoDe("atividades", "AT-900")[0].acao, "Importado da planilha importacao-excel.xlsx (linha 2)");
+    igual(repo().obter("atividades", "AT-900").criadoPor, "Mariana Costa");
+    const de3 = repo().obter("atividades", r.gravadas[1]);
+    igual(de3.dependencias, ["AT-900"], "vínculo entre linhas preservado");
+    const segunda = I().validar("atividades", aba, mapa);
+    ok(linhaNumero(segunda, 2).erros.join(" ").includes("já existe"), "código informado repetido");
+    ok(linhaNumero(segunda, 3).avisos.join(" ").includes("mesmo título"), "aviso de provável duplicidade");
+  });
+
+  teste("T48", "Importação: só gestor e administrador; usuários só pelo administrador", async () => {
+    await base();
+    RT.telas.estado.usuario = colab();
+    igual(RT.telas.importar().titulo, "Sem permissão");
+    RT.telas.estado.usuario = gestor();
+    ok(!RT.telas.importar().html.includes('value="usuarios"'), "gestor não importa usuários");
+    RT.telas.estado.usuario = admin();
+    ok(RT.telas.importar().html.includes('value="usuarios"'), "administrador importa usuários");
+  });
+
+  teste("T49", "Importação: relatório de problemas em Excel", async () => {
+    await base();
+    const aba = (await I().lerPlanilha(await planilhaDoExcel()))[0];
+    const v = I().validar("atividades", aba, I().mapearAutomatico("atividades", cabecalhoDe(aba)));
+    const rel = await I().lerPlanilha(new File([I().relatorioDeErros("atividades", aba, v)], "rel.xlsx"));
+    const linhas = rel[1].linhas.slice(1);
+    igual(linhas.map(l => l[0].v), [4, 6, 7], "linhas com erro");
+    ok(String(linhas[0][2].v).includes("Fulano de Tal"), "motivo descrito");
+  });
+
+  // =====================================================================
+  // Pareceres a partir de uma pasta de documentos
+  // =====================================================================
+  const P = () => RT.pasta;
+  const PDF2 = n => new Uint8Array(PDF.concat([n]));
+
+  // Pasta compartilhada simulada: 2 arquivos na raiz, 1 numa subpasta, 1 em formato não aceito
+  function montarPastaPadrao(G) {
+    G.criarPasta({ nome: "Pareceres recebidos", filhos: [
+      { nome: "Parecer_creditos_IBS_revenda.pdf", conteudo: PDF2(1) },
+      { nome: "Apresentacao_comite.pptx", conteudo: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 9]) },
+      { nome: "email_consultoria.msg", conteudo: new Uint8Array([1, 2, 3]) },
+      { nome: "Consultoria Gama", filhos: [{ nome: "Nota_tecnica_NF3e.pdf", conteudo: PDF2(2) }] }
+    ] });
+  }
+
+  async function comPasta(fn) {
+    const anterior = RT.config.pastaPareceres, sub = RT.config.pastaIncluirSubpastas;
+    RT.config.pastaPareceres = "https://empresa.sharepoint.com/:f:/s/RT/Pareceres?e=abc";
+    RT.config.pastaIncluirSubpastas = true;
+    try {
+      await comSharePoint(async (G, novo) => {
+        const sp = novo(); await sp.criarListas();
+        await repo().iniciar(sp); await repo().carregarDemonstracao(null);
+        RT.telas.estado.pasta = undefined;
+        RT.telas.estado.usuario = gestor();
+        montarPastaPadrao(G);
+        await fn(G, novo);
+      });
+    } finally { RT.config.pastaPareceres = anterior; RT.config.pastaIncluirSubpastas = sub; }
+  }
+
+  teste("T50", "Pasta: lê a pasta compartilhada com subpastas e paginação", async () => {
+    await comPasta(async G => {
+      G.tamanhoPagina = 2;
+      await P().carregarPasta();
+      const st = P().estado();
+      igual(st.raiz.nome, "Pareceres recebidos");
+      igual(st.arquivos.map(a => a.caminho + a.nome).sort(), ["Apresentacao_comite.pptx", "Consultoria Gama/Nota_tecnica_NF3e.pdf", "Parecer_creditos_IBS_revenda.pdf", "email_consultoria.msg"]);
+      ok(G.links[0].startsWith("u!") && !/[+/=]/.test(G.links[0]), "link codificado no formato do Graph");
+      RT.config.pastaIncluirSubpastas = false;
+      await P().carregarPasta();
+      igual(P().estado().arquivos.length, 3, "sem subpastas");
+      const tela = P().tela().html;
+      ok(tela.includes("3 novos") || tela.includes("2 novos"), "contagem de novos");
+      ok(tela.includes("em formato não aceito"), ".msg indicado como não aceito");
+    });
+  });
+
+  teste("T51", "Pasta: cadastra, copia o documento, guarda o original e não repete", async () => {
+    await comPasta(async (G, novo) => {
+      await P().carregarPasta();
+      const alvo = P().estado().arquivos.find(a => a.nome === "Parecer_creditos_IBS_revenda.pdf");
+      P().selecionar(alvo.origemId, true);
+      const linha = P().estado().linhas[alvo.origemId];
+      igual([linha.titulo, linha.dataRecebimento, linha.status], ["Parecer creditos IBS revenda", "2026-10-15", "Recebido"], "sugestões a partir do arquivo");
+      Object.assign(linha, { tipo: "Parecer", categoria: "Créditos de IBS e CBS", origem: "Consultoria Gama", area: "Fiscal e tributária", descricao: "Avaliar crédito na revenda." });
+      const r = await P().cadastrar(gestor());
+      igual(r.gravados.length, 1);
+      const p = repo().obter("pareceres", r.gravados[0]);
+      const a = p.anexos[0];
+      igual([p.status, a.nome, a.origemCaminho], ["Recebido", "Parecer_creditos_IBS_revenda.pdf", "Parecer_creditos_IBS_revenda.pdf"]);
+      ok(a.origemUrl.endsWith("Parecer_creditos_IBS_revenda.pdf"), "link do original");
+      ok(Object.values(G.arquivos).some(x => x.caminho && x.caminho.startsWith(`Pareceres/${p.codigo}/`)), "cópia na biblioteca do portal");
+      igual(a.sha256.length, 64, "hash da cópia");
+      ok(repo().historicoDe("pareceres", p.codigo)[0].acao.includes("pasta de documentos"), "histórico indica a origem");
+      // relendo do SharePoint, o arquivo aparece como já cadastrado
+      await repo().iniciar(novo());
+      RT.telas.estado.pasta = undefined;
+      await P().carregarPasta();
+      igual(P().jaCadastrados().get(alvo.origemId), p.codigo, "marcado como já cadastrado");
+      P().selecionarTodosNovos(true);
+      ok(!P().estado().selecionados[alvo.origemId], "não é selecionado de novo");
+    });
+  });
+
+  teste("T52", "Pasta: só cadastra linhas completas; conteúdo falso é recusado", async () => {
+    await comPasta(async G => {
+      await P().carregarPasta();
+      P().selecionarTodosNovos(true);
+      const st = P().estado();
+      igual(Object.keys(st.selecionados).length, 3, ".msg fora da seleção");
+      st.comum = { tipo: "Parecer", categoria: "Incidência tributária", origem: "Consultoria Gama", area: "Fiscal e tributária" };
+      P().aplicarComum();
+      const ids = Object.keys(st.selecionados);
+      st.linhas[ids[0]].descricao = "Completo";
+      st.linhas[ids[1]].descricao = "Completo";
+      // a terceira fica sem descrição
+      const pdfFalso = st.arquivos.find(a => a.nome === "Parecer_creditos_IBS_revenda.pdf");
+      G.arquivos[pdfFalso.itemId].blob = new Blob(["não é pdf"]);
+      const antes = repo().listar("pareceres").length;
+      const r = await P().cadastrar(gestor());
+      igual(r.comErro, 1, "linha sem descrição");
+      ok(st.erros[ids[2]].descricao, "erro apontado no campo");
+      igual(r.falhas.length, 1, "pdf falso");
+      ok(r.falhas[0].motivo.includes("não corresponde"), r.falhas[0].motivo);
+      igual(repo().listar("pareceres").length, antes + 1, "só a linha válida e íntegra entrou");
+    });
+  });
+
+  teste("T53", "Pasta: arquivos do computador funcionam também no modo demonstração", async () => {
+    await base();
+    await lanca(() => P().carregarPasta(), "ligado ao SharePoint");
+    P().adicionarLocais([new File([PDF2(5)], "Estudo_custos.pdf", { lastModified: Date.UTC(2026, 8, 30, 12) })]);
+    P().adicionarLocais([new File([PDF2(5)], "Estudo_custos.pdf", { lastModified: Date.UTC(2026, 8, 30, 12) })]);
+    igual(P().estado().locais.length, 1, "mesmo arquivo não entra duas vezes");
+    const id = P().estado().locais[0].origemId;
+    P().selecionar(id, true);
+    Object.assign(P().estado().linhas[id], { tipo: "Estudo", categoria: "Contabilidade e apuração", origem: "Interno", area: "Contábil", descricao: "Teste" });
+    const r = await P().cadastrar(gestor());
+    igual(r.gravados.length, 1);
+    igual(repo().obter("pareceres", r.gravados[0]).dataRecebimento, "2026-09-30", "data sugerida pela data do arquivo");
+  });
+
+  teste("T54", "Pasta: Consulta não cadastra; botão só aparece para quem pode", async () => {
+    await base();
+    RT.telas.estado.usuario = consulta();
+    igual(P().tela().titulo, "Sem permissão");
+    ok(!RT.telas.pareceres().html.includes("#pareceres/pasta"), "sem botão para Consulta");
+    await lanca(() => P().cadastrar(consulta()), "não permite");
+    RT.telas.estado.usuario = colab();
+    ok(RT.telas.pareceres().html.includes("#pareceres/pasta"), "botão para Colaborador");
+  });
+
+  // =====================================================================
+  // Perguntas e respostas, período e histórico do parecer, plano por área
+  // =====================================================================
+  teste("T55", "Perguntas: só conta como respondida com resposta, autor e data", async () => {
+    await base();
+    const q = { pergunta: "Pergunta de teste?", categoria: "Incidência tributária", dataPergunta: "2026-10-01", status: "Respondida" };
+    igual(Object.keys(R().validar("perguntas", q, {})).sort(), ["dataResposta", "respondidoPor", "resposta"]);
+    ok(R().validar("perguntas", Object.assign({}, q, { resposta: "R", respondidoPor: "Mariana Costa", dataResposta: "2026-09-01" }), {}).dataResposta, "resposta antes da pergunta");
+    igual(R().validar("perguntas", Object.assign({}, q, { status: "Aguardando resposta" }), {}), {}, "aguardando sem resposta é válido");
+    const { registro } = await repo().criar("perguntas", Object.assign({}, q, { status: "Aguardando resposta", perguntadoPor: "Rafael Lima" }), colab());
+    igual(registro.codigo, "QA-005");
+    ok(R().pode(colab(), "editar", "perguntas", registro), "quem perguntou pode editar");
+    ok(!R().pode(U("Camila Rocha"), "editar", "perguntas", registro), "colaborador de outra área sem vínculo não edita");
+    ok(RT.telas.busca("conta contábil").html.includes("QA-004"), "pesquisa global encontra perguntas");
+    ok(repo().referenciadoPor("pareceres", "PT-014").some(v => v.registro.codigo === "QA-001"), "parecer mostra a pergunta que ele fundamenta");
+    const tela = RT.telas.perguntas().html;
+    ok(tela.includes("<details") && tela.includes("Aguardando resposta"), "lista em formato de perguntas e respostas");
+  });
+
+  teste("T56", "Parecer: período no formato MM/AAAA, inclusive vindo do Excel", async () => {
+    await base();
+    const base1 = parecerValido();
+    igual(R().validar("pareceres", Object.assign({}, base1, { periodo: "03/2026" }), {}), {});
+    ["13/2026", "3/2026", "2026-03", "março/2026"].forEach(v => ok(R().validar("pareceres", Object.assign({}, base1, { periodo: v }), {}).periodo, v));
+    const campo = RT.esquema.pareceres.campo("periodo");
+    const ctx = { usuarios: [], existe: () => true };
+    igual(RT.importacao.converter("pareceres", campo, { v: 46082, data: true }, ctx).valor, "03/2026", "célula de data do Excel");
+    igual(RT.importacao.converter("pareceres", campo, { v: "3/2026" }, ctx).valor, "03/2026", "texto com mês de um dígito");
+    ok(RT.importacao.converter("pareceres", campo, { v: "13/2026" }, ctx).erro, "mês inválido");
+    ok(RT.telas.pareceres().html.includes("08/2026"), "período na lista");
+  });
+
+  teste("T57", "Parecer: solicitações e retornos ficam no histórico e no SharePoint", async () => {
+    await comSharePoint(async (G, novo) => {
+      const sp = novo(); await sp.criarListas();
+      await repo().iniciar(sp); await repo().carregarDemonstracao(null);
+      const p = repo().obter("pareceres", "PT-022");
+      const nova = { tipo: "Solicitação", data: "2026-10-22", texto: "Pedido de prazo para a versão final.", registradoPor: "Camila Rocha", registradoEm: "2026-10-22T10:00:00" };
+      await repo().atualizar("pareceres", p, { interacoes: [nova] }, U("Camila Rocha"), "Solicitação registrada (22/10/2026): Pedido de prazo para a versão final.");
+      await repo().iniciar(novo());
+      igual(repo().obter("pareceres", "PT-022").interacoes, [nova], "relido do SharePoint");
+      igual(repo().obter("pareceres", "PT-014").interacoes.map(i => i.tipo), ["Solicitação", "Retorno", "Solicitação", "Retorno"]);
+      ok(repo().historicoDe("pareceres", "PT-022")[0].acao.startsWith("Solicitação registrada"), "histórico");
+      RT.telas.estado.usuario = gestor();
+      const html = RT.telas.detalhe("pareceres", "PT-014").html;
+      ok(html.includes("Solicitações e retornos") && html.includes("Registrar retorno"), "bloco na tela do parecer");
+    });
+  });
+
+  teste("T58", "Plano: escolher a área mostra só o plano dela, com números da área", async () => {
+    await base();
+    const T = RT.telas;
+    T.filtrosDe("atividades").campos.frente = "Contratos";
+    const html = T.plano().html;
+    const daArea = repo().listar("atividades").filter(a => a.frente === "Contratos");
+    ok(T.registrosFiltrados("atividades").every(a => a.frente === "Contratos"), "lista só da área");
+    igual(T.registrosFiltrados("atividades").length, daArea.length);
+    ok(html.includes("Plano de Contratos") && html.includes(`${daArea.length} ações`), "resumo da área");
+    const bloqueadas = daArea.filter(a => a.status === "Bloqueada").length;
+    ok(html.includes(`Bloqueadas</div><div class="kpi-valor num">${bloqueadas}<`), "indicador calculado só com a área");
+    ok(html.includes("atividades/novo?frente=Contratos"), "nova ação já sai na área");
+    T.filtrosDe("atividades").campos.frente = "";
+    ok(T.plano().html.includes(`Todas as áreas <span class="num">${repo().listar("atividades").length}`), "todas as áreas");
+  });
+
+  teste("T59", "SharePoint: listas antigas recebem as colunas novas sem perder dados", async () => {
+    await comSharePoint(async (G, novo) => {
+      const sp = novo(); await sp.criarListas();
+      // simula uma lista criada antes desta versão: sem as colunas de período e histórico
+      const lista = Object.values(G.listas).find(l => l.nome === "RT_Pareceres");
+      lista.colunas = lista.colunas.filter(c => !["periodo", "interacoes"].includes(c.name));
+      lista.itens.push({ id: "999", etag: '"e,1"', versao: 1, fields: { Title: "PT-900", titulo: "Antigo" }, createdBy: { user: { email: "x" } } });
+      const faltam = await novo().colunasFaltando();
+      igual(faltam.map(f => [f.nome, f.campos.map(c => c.nome)]), [["RT_Pareceres", ["periodo", "interacoes"]]]);
+      const r = await novo().criarListas();
+      igual([r.listas.length, r.colunas], [0, 2]);
+      igual(await novo().colunasFaltando(), [], "nada mais faltando");
+      ok(lista.itens.some(i => i.fields.Title === "PT-900"), "item antigo preservado");
+      await repo().iniciar(novo());
+      await repo().criar("pareceres", parecerValido({ periodo: "10/2026" }), { nome: "Mariana Costa", perfil: "Gestor" }); // listas sem usuários neste teste
+      ok(lista.itens.some(i => i.fields.periodo === "10/2026"), "período gravado na coluna nova");
+    });
   });
 
   // =====================================================================

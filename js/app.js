@@ -74,11 +74,13 @@ RT.app = (function () {
     try {
       if (!a || a === "visao-geral") tela = T().visaoGeral();
       else if (a === "busca") tela = T().busca(params.get("q") || "");
+      else if (a === "pareceres" && b === "pasta") { tela = RT.pasta.tela(); modulo = "pareceres"; carregarPastaSeNecessario(); }
       else if (ents[a] && !ents[a].interno && b === "novo") { tela = T().formulario(a, null, "novo", params); modulo = T().MODULO_DA_ENTIDADE[a]; }
       else if (ents[a] && !ents[a].interno && b && c === "editar") { tela = T().formulario(a, b, "editar"); modulo = T().MODULO_DA_ENTIDADE[a]; }
       else if (a === "decisoes" && b && c === "nova-versao") { tela = T().formulario(a, b, "nova-versao"); modulo = "decisoes"; }
       else if (ents[a] && !ents[a].interno && b && a !== "sistemas") { tela = T().detalhe(a, b); modulo = T().MODULO_DA_ENTIDADE[a]; }
       else if (a === "pareceres") tela = T().pareceres();
+      else if (a === "perguntas") tela = T().perguntas();
       else if (a === "plano" || a === "atividades") { tela = T().plano(); modulo = "plano"; }
       else if (a === "impactos") tela = T().impactos();
       else if (a === "sistemas") tela = T().sistemas(b);
@@ -86,6 +88,7 @@ RT.app = (function () {
       else if (a === "legislacao" || a === "normas" || a === "marcos") { tela = T().legislacao(); modulo = "legislacao"; }
       else if (a === "decisoes") tela = T().decisoes();
       else if (a === "relatorios") tela = b ? T().relatorio(b) : T().relatorios();
+      else if (a === "importar") tela = T().importar();
       else if (a === "administracao" || a === "usuarios") { tela = T().administracao(); modulo = "administracao"; }
       else tela = T().naoEncontrado(a);
     } catch (erro) {
@@ -95,6 +98,8 @@ RT.app = (function () {
 
     conteudo().innerHTML = tela.html;
     document.title = `${tela.titulo} · ${RT.config.nomePortal}`;
+    const itemImportar = document.querySelector('.nav-item[data-modulo="importar"]');
+    if (itemImportar) itemImportar.parentElement.hidden = !RT.regras.pode(usuario(), "importar");
     document.querySelectorAll(".nav-item").forEach(el => {
       const ativo = el.dataset.modulo === modulo;
       el.classList.toggle("ativo", ativo);
@@ -136,6 +141,37 @@ RT.app = (function () {
     },
     "plano-vista"(el) { T().estado.plano.vista = el.dataset.valor; render(); },
     "plano-destaque"(el) { T().estado.plano.destaque = el.dataset.valor; render(); },
+    "plano-area"(el) {
+      T().filtrosDe("atividades").campos.frente = el.dataset.valor;
+      render();
+      const botao = document.querySelector(`[data-acao="plano-area"][data-valor="${CSS.escape(el.dataset.valor)}"]`);
+      if (botao) botao.focus();
+    },
+    async "registrar-interacao"(el) {
+      const tipo = el.dataset.tipo;
+      const reg = RT.repositorio.obter("pareceres", el.dataset.codigo);
+      const r = await U.modal({
+        titulo: `Registrar ${tipo === "Retorno" ? "retorno" : "solicitação"} · ${reg.codigo}`,
+        texto: tipo === "Retorno"
+          ? "Registre o que voltou: um parecer, uma nova versão, um esclarecimento ou uma resposta da área."
+          : "Registre o que foi pedido, a quem, e com que prazo, se houver.",
+        campos: [
+          { nome: "data", rotulo: "Data", tipo: "data", valor: RT.regras.hojeISO(), obrigatorio: true },
+          { nome: "texto", rotulo: tipo === "Retorno" ? "O que foi recebido" : "O que foi solicitado", tipo: "textoLongo", linhas: 5, obrigatorio: true }
+        ],
+        confirmar: "Registrar"
+      });
+      if (!r) return;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(r.data)) { U.toast("Data inválida.", "erro"); return; }
+      await executar("Não foi possível registrar", async () => {
+        const nova = { tipo, data: r.data, texto: r.texto.slice(0, 4000), registradoPor: usuario().nome, registradoEm: RT.regras.agoraISO() };
+        const resumo = r.texto.length > 80 ? r.texto.slice(0, 80) + "…" : r.texto;
+        await RT.repositorio.atualizar("pareceres", reg, { interacoes: (reg.interacoes || []).concat([nova]) }, usuario(),
+          `${tipo} registrad${tipo === "Retorno" ? "o" : "a"} (${U.fmtData(r.data)}): ${resumo}`);
+        U.toast(`${tipo} registrad${tipo === "Retorno" ? "o" : "a"}.`);
+        render();
+      });
+    },
     "matriz"(el) {
       const f = T().filtrosDe("impactos");
       const mesmo = f.campos.area === el.dataset.area && f.campos.criticidade === el.dataset.crit;
@@ -233,10 +269,15 @@ RT.app = (function () {
     },
     async "verificar-listas"() {
       await executar("Não foi possível verificar", async () => {
-        const faltando = await RT.repositorio.adaptadorAtual().verificarListas();
-        mostrarResultadoListas(faltando.length
-          ? `Faltam ${faltando.length}: ${faltando.join(", ")}.`
-          : "Todas as listas e a biblioteca de documentos existem no site.");
+        const adaptador = RT.repositorio.adaptadorAtual();
+        const faltando = await adaptador.verificarListas();
+        const colunas = await adaptador.colunasFaltando();
+        const partes = [];
+        if (faltando.length) partes.push(`Faltam ${faltando.length}: ${faltando.join(", ")}.`);
+        if (colunas.length) partes.push(`Colunas novas a criar: ${colunas.map(c => `${c.nome} (${c.campos.map(x => x.rotulo || x.nome).join(", ")})`).join("; ")}.`);
+        mostrarResultadoListas(partes.length
+          ? partes.join(" ") + " Clique em “Criar listas e biblioteca que faltam”."
+          : "Todas as listas, colunas e a biblioteca de documentos existem no site.");
       });
     },
     async "baixar-anexo"(el) {
@@ -259,9 +300,11 @@ RT.app = (function () {
     },
     async "criar-listas"() {
       await executar("Não foi possível criar as listas", async () => {
-        const criadas = await RT.repositorio.adaptadorAtual().criarListas(msg => progresso(msg));
+        const r = await RT.repositorio.adaptadorAtual().criarListas(msg => progresso(msg));
         progresso("");
-        mostrarResultadoListas(criadas.length ? `Listas criadas: ${criadas.length}. Recarregue a página para começar a usar.` : "Nenhuma lista precisava ser criada.");
+        mostrarResultadoListas(r.listas.length || r.colunas
+          ? `Criadas: ${r.listas.length} lista(s) e ${r.colunas} coluna(s). Recarregue a página para começar a usar.`
+          : "Nada precisava ser criado.");
       });
     },
     "limpar-relatorio"(el) {
@@ -306,11 +349,150 @@ RT.app = (function () {
       await registrarExportacao(ref, `Impressão ou PDF: ${titulo}`);
       window.print();
     },
+    "pasta-atualizar"() { carregarPastaSeNecessario(true); },
+    "pasta-aplicar"() { RT.pasta.aplicarComum(); render(); },
+    async "pasta-cadastrar"() {
+      const st = RT.pasta.estado();
+      const validos = RT.pasta.validarSelecionados();
+      const comErro = Object.keys(st.erros).length;
+      if (!validos.length) {
+        st.resultado = null;
+        render();
+        U.toast(`Complete os campos obrigatórios marcados em ${comErro} arquivo${comErro === 1 ? "" : "s"}.`, "erro");
+        return;
+      }
+      const r = await U.modal({
+        titulo: `Cadastrar ${validos.length} parecer${validos.length === 1 ? "" : "es"}`,
+        texto: `Cada documento será copiado para a biblioteca do portal e o parecer entra como <strong>Recebido</strong>.${comErro ? ` ${comErro} arquivo${comErro === 1 ? "" : "s"} com campos faltando fica${comErro === 1 ? "" : "m"} para depois.` : ""}`,
+        confirmar: "Cadastrar"
+      });
+      if (!r) return;
+      await executar("O cadastro foi interrompido", async () => {
+        const res = await RT.pasta.cadastrar(usuario(), (i, total, nome) => progresso(`Cadastrando ${i} de ${total}: ${nome}`));
+        progresso("");
+        U.toast(`${res.gravados.length} parecer${res.gravados.length === 1 ? "" : "es"} cadastrado${res.gravados.length === 1 ? "" : "s"}.`);
+        render();
+      });
+      progresso("");
+    },
+    "importar-modelo"() {
+      const ent = estadoImportacao().ent;
+      if (ent) RT.xlsx.baixar(RT.importacao.modelo(ent), `Modelo_importacao_${ent}.xlsx`);
+    },
+    "importar-validar"() {
+      const st = estadoImportacao();
+      try {
+        st.validacao = RT.importacao.validar(st.ent, st.abas[st.aba], st.mapeamento);
+        st.soProblemas = st.validacao.linhas.some(l => l.erros.length);
+      } catch (e) { U.toast(e.message, "erro"); return; }
+      render();
+    },
+    async "importar-gravar"() {
+      const st = estadoImportacao();
+      const validas = st.validacao.linhas.filter(l => !l.erros.length).length;
+      const comErro = st.validacao.linhas.length - validas;
+      const r = await U.modal({
+        titulo: `Gravar ${validas} registro${validas === 1 ? "" : "s"}`,
+        texto: `Os registros entram em <strong>${U.esc(RT.esquema[st.ent].rotulo)}</strong>${RT.repositorio.info().persistente ? ", no SharePoint" : ""}, com seu nome e a referência à planilha no histórico.${comErro ? ` As ${comErro} linhas com erro serão ignoradas.` : ""}`,
+        confirmar: "Gravar"
+      });
+      if (!r) return;
+      await executar("A importação foi interrompida", async () => {
+        st.resultado = await RT.importacao.gravar(st.ent, st.validacao, usuario(), st.nomeArquivo,
+          (i, total) => progresso(`Gravando ${i} de ${total}…`));
+        progresso("");
+        U.toast(`${st.resultado.gravadas.length} registros importados.`);
+        render();
+      });
+      progresso("");
+    },
+    "importar-relatorio"() {
+      const st = estadoImportacao();
+      RT.xlsx.baixar(RT.importacao.relatorioDeErros(st.ent, st.abas[st.aba], st.validacao), `Problemas_importacao_${st.ent}.xlsx`);
+    },
+    "importar-reiniciar"() {
+      T().estado.importacao = { ent: estadoImportacao().ent };
+      render();
+    },
     // O link não pode mudar o # da página, que é a rota: só move o foco
     "pular-conteudo"() { conteudo().focus(); },
     "entrar"() { RT.auth.entrar(); },
     "sair"() { RT.auth.sair(); }
   };
+
+  // ---------- Documentos da pasta ----------
+  let lendoPasta = false;
+  async function carregarPastaSeNecessario(forcar) {
+    const st = RT.pasta.estado();
+    if (lendoPasta || !RT.repositorio.info().persistente || !RT.config.pastaPareceres) return;
+    if (st.arquivos && !forcar) return;
+    lendoPasta = true;
+    st.erroPasta = "";
+    if (forcar) { st.arquivos = null; render(); }
+    try { await RT.pasta.carregarPasta(); }
+    catch (e) { st.erroPasta = e.message; st.arquivos = []; }
+    finally { lendoPasta = false; }
+    if (location.hash.startsWith("#pareceres/pasta")) render();
+  }
+
+  function aoMudarPasta(el) {
+    const st = RT.pasta.estado();
+    if (el.hasAttribute("data-pasta-locais")) { RT.pasta.adicionarLocais(el.files); render(); return true; }
+    if (el.dataset.pastaSelecionar) { RT.pasta.selecionar(el.dataset.pastaSelecionar, el.checked); st.resultado = null; render(); return true; }
+    if (el.hasAttribute("data-pasta-selecionar-todos")) { RT.pasta.selecionarTodosNovos(el.checked); render(); return true; }
+    if (el.hasAttribute("data-pasta-mostrar-cadastrados")) { st.mostrarCadastrados = el.checked; render(); return true; }
+    return false;
+  }
+
+  // Campos digitados na tabela: atualiza o estado sem redesenhar, para não perder o foco
+  function aoDigitarPasta(el) {
+    const st = RT.pasta.estado();
+    if (el.dataset.pastaCampo && st.linhas[el.dataset.id]) { st.linhas[el.dataset.id][el.dataset.pastaCampo] = el.value; return true; }
+    if (el.dataset.pastaComum) { st.comum[el.dataset.pastaComum] = el.value; return true; }
+    return false;
+  }
+
+  // ---------- Importação de planilhas ----------
+  function estadoImportacao() {
+    return T().estado.importacao || (T().estado.importacao = {});
+  }
+
+  // Primeira aba que parece ter dados: ignora as abas "Sobre" e "Instruções" do modelo
+  function abaPadrao(abas) {
+    const i = abas.findIndex(a => !/^(sobre|instru)/i.test(a.nome) && a.linhas.length > 0);
+    return i >= 0 ? i : 0;
+  }
+
+  function mapearAba(st) {
+    const cab = (st.abas[st.aba].linhas[0] || []).map(c => c ? String(c.v) : "");
+    st.mapeamento = RT.importacao.mapearAutomatico(st.ent, cab);
+    st.validacao = null;
+  }
+
+  async function aoMudarImportacao(el) {
+    const st = estadoImportacao();
+    const campo = el.dataset.importar;
+    if (campo === "ent") { T().estado.importacao = { ent: el.value }; render(); return; }
+    if (campo === "arquivo") {
+      const arquivo = el.files[0];
+      if (!arquivo) return;
+      try {
+        progresso("Lendo a planilha…");
+        st.abas = await RT.importacao.lerPlanilha(arquivo);
+        st.nomeArquivo = arquivo.name;
+        st.aba = abaPadrao(st.abas);
+        st.resultado = null;
+        mapearAba(st);
+      } catch (e) {
+        U.toast(e.message, "erro");
+      } finally { progresso(""); }
+      render();
+      return;
+    }
+    if (campo === "aba") { st.aba = Number(el.value); mapearAba(st); render(); return; }
+    if (campo === "mapa") { st.mapeamento[Number(el.dataset.indice)] = el.value; st.validacao = null; render(); return; }
+    if (campo === "so-problemas") { st.soProblemas = el.checked; render(); }
+  }
 
   // Aba "Sobre" de toda planilha exportada: rastreabilidade de quem gerou e com quais filtros
   function folhaSobre(titulo, filtros, resumo) {
@@ -484,6 +666,7 @@ RT.app = (function () {
         T().filtrosDe(el.dataset.ent).busca = el.value;
         T().atualizarLista(el.dataset.ent);
       }
+      aoDigitarPasta(el);
     });
 
     document.addEventListener("change", ev => {
@@ -506,6 +689,8 @@ RT.app = (function () {
         if (mesmo) mesmo.focus();
       }
       if (el.dataset.anexos) aoEscolherArquivos(el);
+      if (el.dataset.importar) aoMudarImportacao(el);
+      if (!aoMudarPasta(el)) aoDigitarPasta(el);
       if (el.id === "seletor-usuario") {
         const u = RT.repositorio.listar("usuarios").find(x => x.email === el.value);
         if (u) { definirUsuario(u); render(); U.toast(`Agora você vê o portal como ${u.nome} (${u.perfil}).`); }

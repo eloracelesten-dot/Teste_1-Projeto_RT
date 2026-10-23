@@ -33,7 +33,8 @@ RT.ui = (function () {
     "Não iniciada": "t-naoiniciada", "Não iniciado": "t-naoiniciada", "Recebido": "t-recebido", "Identificado": "t-identificado",
     "Cancelada": "t-cancelada", "Cancelado": "t-cancelada", "Não avaliada": "t-naoiniciada", "Não aplicável": "t-cancelada", "Arquivado": "t-cancelada",
     "Em elaboração": "t-elaboracao", "Em correção": "t-correcao", "Bloqueado": "t-elaboracao",
-    "Substituída": "t-substituida"
+    "Substituída": "t-substituida",
+    "Aguardando resposta": "t-elaboracao", "Respondida": "t-concluida", "Em revisão": "t-validacao"
   };
   const tag = valor => valor ? `<span class="tag ${CLASSES[valor] || "t-naoiniciada"}">${esc(valor)}</span>` : "";
 
@@ -83,6 +84,7 @@ RT.ui = (function () {
       case "booleano": return v ? "Sim" : "Não";
       case "numero": return campo.nome === "percentual" ? progresso(v) : esc(v);
       case "anexos": return `${v.length} arquivo${v.length > 1 ? "s" : ""}`;
+      case "interacoes": return `${v.length} registro${v.length > 1 ? "s" : ""}`;
       default: return esc(v);
     }
   }
@@ -154,7 +156,7 @@ RT.ui = (function () {
         return `<div class="campo inteiro"><label class="rotulo" for="${id}">${esc(campo.rotulo)}</label>${entrada}<span class="erro-msg" id="${id}-msg">${esc(erro || "")}</span></div>`;
       }
       default:
-        entrada = `<input ${attrs} type="text" value="${esc(v)}"${campo.max ? ` maxlength="${campo.max}"` : ""}>`;
+        entrada = `<input ${attrs} type="text" value="${esc(v)}"${campo.max ? ` maxlength="${campo.max}"` : ""}${campo.formato === "mesAno" ? ' placeholder="MM/AAAA" inputmode="numeric"' : ""}>`;
     }
     const ajuda = campo.ajuda ? `<span class="ajuda">${esc(campo.ajuda)}</span>` : "";
     return `<div class="campo${largo ? " inteiro" : ""}"><label for="${id}">${esc(campo.rotulo)}${obrig}</label>${entrada}${ajuda}<span class="erro-msg" id="${id}-msg">${esc(erro || "")}</span></div>`;
@@ -203,7 +205,7 @@ RT.ui = (function () {
         <form class="modal-caixa" role="dialog" aria-modal="true" aria-labelledby="modal-titulo" novalidate>
           <h2 id="modal-titulo">${esc(titulo)}</h2>
           ${texto ? `<p class="modal-texto">${texto}</p>` : ""}
-          ${(campos || []).map(c => `<div class="campo"><label for="m-${c.nome}">${esc(c.rotulo)}${c.obrigatorio ? ' <span class="obrig">*</span>' : ""}</label>${c.tipo === "textoLongo" ? `<textarea id="m-${c.nome}" name="${c.nome}" rows="3"></textarea>` : `<input id="m-${c.nome}" name="${c.nome}" type="text" autocomplete="off">`}<span class="erro-msg"></span></div>`).join("")}
+          ${(campos || []).map(c => `<div class="campo"><label for="m-${c.nome}">${esc(c.rotulo)}${c.obrigatorio ? ' <span class="obrig">*</span>' : ""}</label>${c.tipo === "textoLongo" ? `<textarea id="m-${c.nome}" name="${c.nome}" rows="${c.linhas || 3}">${esc(c.valor || "")}</textarea>` : `<input id="m-${c.nome}" name="${c.nome}" type="${c.tipo === "data" ? "date" : "text"}" value="${esc(c.valor || "")}" autocomplete="off">`}<span class="erro-msg"></span></div>`).join("")}
           <div class="modal-acoes">
             <button type="button" class="botao" data-fechar>${esc(cancelar || "Cancelar")}</button>
             <button type="submit" class="botao ${perigo ? "perigo" : "primario"}">${esc(confirmar || "Confirmar")}</button>

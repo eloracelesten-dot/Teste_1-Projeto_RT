@@ -21,7 +21,7 @@
   Matriz aplicada:
     Lista             Administradores  Gestores              Colaboradores          Consulta
     Pareceres...      Controle total   Editar sem excluir    Editar sem excluir     Leitura
-    (e Atividades, Impactos, Adequacoes, Testes, Defeitos, Normas, Marcos, Documentos)
+    (e Perguntas, Atividades, Impactos, Adequacoes, Testes, Defeitos, Normas, Marcos, Documentos)
     Decisoes          Controle total   Editar sem excluir    Leitura                Leitura
     Usuarios          Controle total   Leitura               Leitura                Leitura
     Historico         Controle total   Adicionar sem editar  Adicionar sem editar   Adicionar sem editar
@@ -73,7 +73,7 @@ foreach ($chave in $grupos.Keys) {
 }
 
 # ---------- Listas ----------
-$trabalho = @("Pareceres", "Atividades", "Impactos", "Adequacoes", "Testes", "Defeitos", "Normas", "Marcos", "Documentos")
+$trabalho = @("Pareceres", "Perguntas", "Atividades", "Impactos", "Adequacoes", "Testes", "Defeitos", "Normas", "Marcos", "Documentos")
 $matriz = @{}
 foreach ($l in $trabalho) { $matriz[$l] = @{ Gestor = $nivelEditar; Colaborador = $nivelEditar; Consulta = "Read" } }
 $matriz["Decisoes"]  = @{ Gestor = $nivelEditar;   Colaborador = "Read";         Consulta = "Read" }

@@ -130,10 +130,53 @@ RT.AdaptadorSharePoint = class {
     return { arquivoId: item.id, webUrl: item.webUrl || "", driveId: drive };
   }
 
-  async baixarArquivo(anexo) {
+  // Lê uma pasta do SharePoint, Teams ou OneDrive a partir do endereço ou de um link de compartilhamento
+  async listarPasta(url, incluirSubpastas, limite) {
+    limite = limite || 1000;
+    // Pasta em OneDrive pessoal (endereço "-my.sharepoint.com") exige a permissão Files.Read.All
+    const escopos = /-my\.sharepoint\.com/i.test(url) ? ["Files.Read.All"] : undefined;
+    const codificado = "u!" + btoa(unescape(encodeURIComponent(url.trim()))).replace(/=+$/, "").replace(/\//g, "_").replace(/\+/g, "-");
+    let raiz;
+    try {
+      raiz = await this.graph("GET", `/shares/${codificado}/driveItem?$select=id,name,webUrl,folder,parentReference`, null, null, escopos);
+    } catch (e) {
+      throw new Error(`Não foi possível abrir a pasta configurada. Confira o endereço em config.js e se você tem acesso a ela. (${e.message})`);
+    }
+    if (!raiz.folder) throw new Error("O endereço configurado é de um arquivo, não de uma pasta.");
+    const drive = raiz.parentReference.driveId;
+    const arquivos = [];
+    const fila = [{ id: raiz.id, caminho: "" }];
+    const campos = "id,name,size,file,folder,createdDateTime,lastModifiedDateTime,lastModifiedBy,webUrl";
+    while (fila.length && arquivos.length < limite) {
+      const atual = fila.shift();
+      let proxima = `/drives/${drive}/items/${atual.id}/children?$top=200&$select=${campos}`;
+      while (proxima && arquivos.length < limite) {
+        const r = await this.graph("GET", proxima, null, null, escopos);
+        for (const it of r.value) {
+          if (it.folder) { if (incluirSubpastas) fila.push({ id: it.id, caminho: `${atual.caminho}${it.name}/` }); continue; }
+          if (!it.file) continue;
+          arquivos.push({
+            origemId: `${drive}:${it.id}`, driveId: drive, itemId: it.id, nome: it.name, tamanho: it.size || 0,
+            caminho: atual.caminho, criadoEm: it.createdDateTime || "", modificadoEm: it.lastModifiedDateTime || "",
+            autor: it.lastModifiedBy && it.lastModifiedBy.user ? it.lastModifiedBy.user.displayName || "" : "", webUrl: it.webUrl || "",
+            escopos
+          });
+        }
+        proxima = r["@odata.nextLink"];
+      }
+    }
+    return { raiz: { nome: raiz.name, webUrl: raiz.webUrl }, arquivos, truncado: arquivos.length >= limite };
+  }
+
+  async baixarItemDaPasta(arquivo) {
+    const blob = await this.baixarArquivo({ driveId: arquivo.driveId, arquivoId: arquivo.itemId }, arquivo.escopos);
+    return new File([blob], arquivo.nome, { type: blob.type || "" });
+  }
+
+  async baixarArquivo(anexo, escopos) {
     if (!anexo.arquivoId) throw new Error("Este anexo é um registro de demonstração e não tem arquivo guardado.");
     const drive = anexo.driveId || await this.driveId();
-    const item = await this.graph("GET", `/drives/${drive}/items/${anexo.arquivoId}?$select=id,name,@microsoft.graph.downloadUrl`);
+    const item = await this.graph("GET", `/drives/${drive}/items/${anexo.arquivoId}?$select=id,name,@microsoft.graph.downloadUrl`, null, null, escopos);
     const resp = await fetch(item["@microsoft.graph.downloadUrl"]);
     if (!resp.ok) throw new Error(`Não foi possível baixar o arquivo (${resp.status}).`);
     return resp.blob();
@@ -176,10 +219,31 @@ RT.AdaptadorSharePoint = class {
       case "numero": return Object.assign(base, { number: {} });
       case "booleano": return Object.assign(base, { boolean: {} });
       case "opcao": return Object.assign(base, { choice: { choices: campo.opcoes, allowTextEntry: true, displayAs: "dropDownMenu" } });
-      case "textoLongo": case "refs": case "multiOpcao": case "anexos":
+      case "textoLongo": case "refs": case "multiOpcao": case "anexos": case "interacoes":
         return Object.assign(base, { text: { allowMultipleLines: true, linesForEditing: 6 } });
       default: return Object.assign(base, { text: {} });
     }
+  }
+
+  // Colunas que o portal usa e que ainda não existem em listas já criadas (campos novos em versões novas)
+  async colunasFaltando() {
+    const mapa = await this.mapaListas(true);
+    const site = await this.site();
+    const resultado = [];
+    for (const ent of Object.keys(RT.esquema)) {
+      const lista = mapa[this.nomeLista(ent)];
+      if (!lista) continue;
+      const existentes = new Set();
+      let proxima = `/sites/${site}/lists/${lista}/columns?$select=name&$top=999`;
+      while (proxima) {
+        const r = await this.graph("GET", proxima);
+        r.value.forEach(c => existentes.add(c.name));
+        proxima = r["@odata.nextLink"];
+      }
+      const campos = RT.esquema[ent].campos.filter(c => c.nome !== "codigo" && !existentes.has(c.nome));
+      if (campos.length) resultado.push({ ent, lista, nome: this.nomeLista(ent), campos });
+    }
+    return resultado;
   }
 
   async criarListas(aoProgredir) {
@@ -199,8 +263,17 @@ RT.AdaptadorSharePoint = class {
         list: { template: "genericList" }
       }, null, ["Sites.Manage.All"]);
     }
+    // Listas que já existiam recebem as colunas novas
+    let colunas = 0;
+    for (const f of await this.colunasFaltando()) {
+      for (const c of f.campos) {
+        if (aoProgredir) aoProgredir(`${f.nome}: criando a coluna ${c.rotulo || c.nome}…`);
+        await this.graph("POST", `/sites/${site}/lists/${f.lista}/columns`, this.definicaoColuna(c), null, ["Sites.Manage.All"]);
+        colunas++;
+      }
+    }
     await this.mapaListas(true);
-    return faltando;
+    return { listas: faltando, colunas };
   }
 
   paraRegistro(entidade, item) {
@@ -214,7 +287,7 @@ RT.AdaptadorSharePoint = class {
     for (const c of RT.esquema[entidade].campos) {
       if (c.nome === "codigo") continue;
       const v = f[c.nome];
-      if (["refs", "multiOpcao", "anexos"].includes(c.tipo)) {
+      if (["refs", "multiOpcao", "anexos", "interacoes"].includes(c.tipo)) {
         try { reg[c.nome] = v ? JSON.parse(v) : []; } catch (e) { reg[c.nome] = []; }
       } else if (c.tipo === "booleano") reg[c.nome] = Boolean(v);
       else if (c.tipo === "numero") reg[c.nome] = v === undefined || v === null ? "" : Number(v);
@@ -229,7 +302,7 @@ RT.AdaptadorSharePoint = class {
     for (const c of RT.esquema[entidade].campos) {
       if (c.nome === "codigo" || !(c.nome in dados)) continue;
       const v = dados[c.nome];
-      if (["refs", "multiOpcao", "anexos"].includes(c.tipo)) campos[c.nome] = JSON.stringify(v || []);
+      if (["refs", "multiOpcao", "anexos", "interacoes"].includes(c.tipo)) campos[c.nome] = JSON.stringify(v || []);
       else if (c.tipo === "booleano") campos[c.nome] = Boolean(v);
       else if (c.tipo === "numero") { if (v !== "" && v !== null && v !== undefined) campos[c.nome] = Number(v); }
       else campos[c.nome] = v === null || v === undefined ? "" : String(v);

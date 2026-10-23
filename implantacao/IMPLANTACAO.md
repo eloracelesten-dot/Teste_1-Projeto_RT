@@ -8,7 +8,7 @@ Roteiro para a TI colocar o portal em homologação e depois em produção. Nada
 Navegador ──(login Entra ID / MSAL)──► Azure Static Web Apps (só arquivos estáticos, exige login)
     │
     └──(Microsoft Graph, token do próprio usuário)──► Site do SharePoint
-                                                       ├─ 11 listas RT_* (dados)
+                                                       ├─ 12 listas RT_* (dados)
                                                        └─ biblioteca RT_Documentos (anexos)
 ```
 
@@ -29,7 +29,9 @@ O portal não tem servidor próprio nem banco próprio. Os dados e os documentos
    - `Sites.ReadWrite.All` para o uso diário;
    - `Sites.Manage.All` só para o administrador criar listas.
 
-   Conforme a política do tenant, pode ser preciso consentimento do administrador. Alternativa de menor privilégio: `Sites.Selected` com acesso concedido só a este site.
+   Conforme a política do tenant, pode ser preciso consentimento do administrador. Alternativa de menor privilégio: `Sites.Selected` com acesso concedido só a este site (e ao site da pasta de pareceres, se for outro).
+
+   Se a pasta onde chegam os pareceres (`pastaPareceres`) estiver num **OneDrive pessoal**, inclua também `Files.Read.All`. Pastas do SharePoint e do Teams já são cobertas por `Sites.ReadWrite.All`.
 4. **Papéis do aplicativo** (opcional, para `perfisPeloEntra: true`). Criar quatro papéis do tipo *Usuários/Grupos*:
 
    | Nome exibido | Valor |
@@ -44,7 +46,9 @@ O portal não tem servidor próprio nem banco próprio. Os dados e os documentos
 
 ## 3. Criar listas e biblioteca
 
-Entrar no portal com uma conta de administrador e, em **Administração**, clicar em **Criar listas e biblioteca que faltam**. São criadas 11 listas `RT_*` e a biblioteca `RT_Documentos`.
+Entrar no portal com uma conta de administrador e, em **Administração**, clicar em **Criar listas e biblioteca que faltam**. São criadas 12 listas `RT_*` e a biblioteca `RT_Documentos`.
+
+**Ao publicar uma versão nova do portal**, repita o mesmo caminho: **Verificar listas** mostra listas e colunas novas, e **Criar listas e biblioteca que faltam** cria o que faltar. Isso não mexe nos dados que já estão nas listas. Se for criada uma lista nova, rode de novo o script de permissões do passo 4.
 
 ## 4. Permissões no SharePoint
 
